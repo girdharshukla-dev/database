@@ -1,0 +1,5 @@
+BreakBeforeBraces: Attach
+IndentWidth: 2
+UseTab: Never
+SortIncludes: false
+ColumnWidth: 100
