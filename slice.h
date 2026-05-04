@@ -5,7 +5,7 @@
 
 struct slice_type{
     uint8_t *data;
-    uint64_t length;
+    uint32_t length;
 };
 
 #endif
