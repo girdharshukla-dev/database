@@ -23,7 +23,7 @@ ssize_t attempt_full_write(int fd, const void *buf, size_t count) {
 ssize_t attempt_full_read(int fd, void *buf, size_t count) {
   size_t readn = 0;
   uint8_t *ptr = (uint8_t *)buf;
-  while (read < count) {
+  while (readn < count) {
     ssize_t n = read(fd, ptr + readn, count - readn);
     if (n > 0) {
       readn += n;

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <zlib.h>
+#include <string.h>
 
 struct wal_type {
   int fd;
@@ -63,7 +64,7 @@ int wal_append(struct wal_type *wal, const struct slice_type *key,
   memcpy(temp, value->data, value_length);
   temp += value_length;
 
-  crc = crc32(0, buffer, buffer_size);
+  crc = crc32(0, buffer, buffer_size - sizeof(crc));
 
   memcpy(temp, &crc, sizeof(crc));
 
@@ -79,12 +80,24 @@ int wal_replay(struct wal_type *wal, struct memtable_type *mt) {
   lseek(wal->fd, 0, SEEK_SET);
   while (1) {
     uint32_t key_length, value_length;
-    if (attempt_full_read(wal->fd, &key_length, sizeof(key_length)) !=
-        sizeof(key_length))
-      return -1;
-    if (attempt_full_read(wal->fd, &value_length, sizeof(value_length)) !=
-        sizeof(value_length))
-      return -1;
+    // if (attempt_full_read(wal->fd, &key_length, sizeof(key_length)) !=
+    //     sizeof(key_length))
+    //   return -1;
+    // if (attempt_full_read(wal->fd, &value_length, sizeof(value_length)) !=
+    //     sizeof(value_length))
+    //   return -1;
+
+    ssize_t n = attempt_full_read(wal->fd, &key_length, sizeof(key_length));
+    if(n == 0){ //EOF
+      break;
+    }
+    if(n != sizeof(key_length)) return -1;
+
+    n = attempt_full_read(wal->fd, &value_length, sizeof(value_length));
+    if(n == 0){ //EOF
+      break;
+    }
+    if(n != sizeof(value_length)) return -1;
 
     int buffer_size =
         sizeof(key_length) + sizeof(value_length) + key_length + value_length;
@@ -92,9 +105,9 @@ int wal_replay(struct wal_type *wal, struct memtable_type *mt) {
     memcpy(buffer, &key_length, sizeof(key_length));
     memcpy(buffer + sizeof(key_length), &value_length, sizeof(value_length));
 
-    if (attempt_full_read(wal->fd, buffer + key_length + value_length,
-                          buffer_size - key_length - value_length) !=
-        buffer_size - key_length - value_length) {
+    if (attempt_full_read(wal->fd, buffer + sizeof(key_length) + sizeof(value_length),
+                          key_length + value_length) !=
+        key_length + value_length) {
       free(buffer);
       return -1;
     }

@@ -2,6 +2,7 @@
 #include "skiplist.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 struct memtable_type {
   struct skiplist_type *sl;
@@ -33,7 +34,7 @@ int memtable_put(struct memtable_type *mt, const struct slice_type *key,
 }
 
 int memtable_get(struct memtable_type *mt, const struct slice_type *key,
-                 const struct slice_type *value) {
+                 struct slice_type *value) {
   int res = skiplist_get(mt->sl, key, value);
   if (res != 0)
     return -1;
