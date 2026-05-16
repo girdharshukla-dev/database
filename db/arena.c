@@ -7,12 +7,6 @@
 
 #define ALIGNMENT 16
 
-struct arena_type{
-    uint8_t *buffer_base;
-    size_t current_offset;
-    size_t buffer_length;
-};
-
 void *arena_alloc_aligned(struct arena_type *arena, size_t size, size_t align){
     assert((align & (align - 1)) == 0);
 

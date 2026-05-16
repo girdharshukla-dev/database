@@ -1,36 +1,61 @@
 #include "memtable.h"
 #include "skiplist.h"
+#include "arena.h"
 
 #include <stdlib.h>
 #include <string.h>
 
+#define MEMTABLE_ARENA_SIZE (16 * 1024 * 1024)
+
 struct memtable_type {
+  uint8_t *arena_buffer;
+  struct arena_type arena;
   struct skiplist_type *sl;
 };
 
 struct memtable_type *memtable_create(void) {
   struct memtable_type *mt = malloc(sizeof(struct memtable_type));
-  mt->sl = skiplist_create();
+  if (mt == NULL) {
+    return NULL;
+  }
+
+  mt->arena_buffer = malloc(MEMTABLE_ARENA_SIZE);
+  if(mt->arena_buffer == NULL){
+    free(mt);
+    return NULL;
+  }
+
+  arena_init(&mt->arena, mt->arena_buffer, MEMTABLE_ARENA_SIZE);
+
+  mt->sl = skiplist_create(&mt->arena);
+  if(mt->sl == NULL){
+    memtable_destroy(mt);
+    return NULL;
+  }
+
   return mt;
 }
 
 void memtable_destroy(struct memtable_type *mt) {
-  skiplist_destroy(mt->sl);
+  free(mt->arena_buffer);
   free(mt);
 }
 
 int memtable_put(struct memtable_type *mt, const struct slice_type *key,
                  const struct slice_type *value) {
-  uint8_t *k = malloc(key->length);
-  memcpy(k, key->data, key->length);
 
-  uint8_t *v = malloc(value->length);
-  memcpy(v, value->data, value->length);
+  uint8_t *buffer = arena_alloc(&mt->arena, key->length + value->length);
+  if (buffer == NULL) {
+    return -1;
+  }
+  memcpy(buffer, key->data, key->length);
+  memcpy(buffer + key->length, value->data, value->length);
 
-  struct slice_type k_copy = {.data = k, .length = key->length};
-  struct slice_type v_copy = {.data = v, .length = value->length};
+  struct slice_type k_copy = {.data = buffer, .length = key->length};
+  struct slice_type v_copy = {.data = buffer + key->length,
+                              .length = value->length};
 
-  return skiplist_insert(mt->sl, key, value);
+  return skiplist_insert(mt->sl, &k_copy, &v_copy);
 }
 
 int memtable_get(struct memtable_type *mt, const struct slice_type *key,

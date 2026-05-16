@@ -1,4 +1,5 @@
 #include "skiplist.h"
+#include "arena.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@ struct sl_node {
 };
 
 struct skiplist_type {
+  struct arena_type *arena;
   struct sl_node *head;
   int max_level;
 };
@@ -41,18 +43,18 @@ static int random_level() {
 }
 
 static struct sl_node *create_node(struct slice_type key,
-                                   struct slice_type value, int level) {
-  struct sl_node *n = malloc(sizeof(struct sl_node));
+                                   struct slice_type value, int level,
+                                   struct arena_type *arena) {
+  struct sl_node *n = arena_alloc(arena, sizeof(struct sl_node));
   if (n == NULL) {
     fprintf(stderr, "Error in allocating memory to sl_node\n");
     return NULL;
   }
   n->key = key;
   n->value = value;
-  n->next = malloc((level + 1) * sizeof(struct sl_node *));
+  n->next = arena_alloc(arena, (level + 1) * sizeof(struct sl_node *));
   if (n->next == NULL) {
     fprintf(stderr, "Error in allocating memory to sl_node->next\n");
-    free(n);
     return NULL;
   }
   for (size_t i = 0; i <= level; i++) {
@@ -61,17 +63,18 @@ static struct sl_node *create_node(struct slice_type key,
   return n;
 }
 
-struct skiplist_type *skiplist_create() {
-  struct skiplist_type *sl = malloc(sizeof(struct skiplist_type));
+struct skiplist_type *skiplist_create(struct arena_type *arena) {
+  struct skiplist_type *sl = arena_alloc(arena, sizeof(struct skiplist_type));
   if (sl == NULL) {
     fprintf(stderr, "Error in allocating memory to skiplist\n");
     return NULL;
   }
+  sl->arena = arena;
   struct slice_type dummy_key = {.data = NULL, .length = 0};
   struct slice_type dummy_value = {.data = NULL, .length = 0};
-  sl->head = create_node(dummy_key, dummy_value, SKIPLIST_MAX_LEVEL_COUNT - 1);
+  sl->head =
+      create_node(dummy_key, dummy_value, SKIPLIST_MAX_LEVEL_COUNT - 1, arena);
   if (sl->head == NULL) {
-    free(sl);
     return NULL;
   }
   sl->max_level = SKIPLIST_MAX_LEVEL_COUNT - 1;
@@ -90,17 +93,21 @@ static void find_less_than_or_equal_to(struct skiplist_type *sl,
 }
 
 int skiplist_insert(struct skiplist_type *sl, const struct slice_type *key,
-                     const struct slice_type *value) {
+                    const struct slice_type *value) {
   struct sl_node *preds[SKIPLIST_MAX_LEVEL_COUNT];
   find_less_than_or_equal_to(sl, key, preds);
 
-  if(preds[0]->next[0] != NULL && slice_cmp(&preds[0]->next[0]->key, key) == 0){
+  if (preds[0]->next[0] != NULL &&
+      slice_cmp(&preds[0]->next[0]->key, key) == 0) {
     preds[0]->next[0]->value = *value;
     return 0;
   }
-  
+
   int new_level = random_level(); // this is the level index not level count
-  struct sl_node *n = create_node(*key, *value, new_level);
+  struct sl_node *n = create_node(*key, *value, new_level, sl->arena);
+  if(n == NULL){
+    return -1;
+  }
 
   for (int i = 0; i <= new_level; i++) {
     n->next[i] = preds[i]->next[i];
@@ -113,26 +120,13 @@ int skiplist_get(struct skiplist_type *sl, const struct slice_type *key,
                  struct slice_type *value) {
   struct sl_node *cur = sl->head;
   for (int i = SKIPLIST_MAX_LEVEL_COUNT - 1; i >= 0; i--) {
-    while(cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) < 0) cur = cur->next[i];
-    if(cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) == 0){
+    while (cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) < 0)
+      cur = cur->next[i];
+    if (cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) == 0) {
       *value = cur->next[i]->value;
       return 0;
     }
   }
   return -1;
 }
-
-void skiplist_destroy(struct skiplist_type *sl){
-  struct sl_node *cur = sl->head;
-  while(cur){
-    struct sl_node *next = cur->next[0];
-    free(cur->next);
-    free(cur);
-    cur = next;
-  }
-
-  free(sl);
-}
-
-
 

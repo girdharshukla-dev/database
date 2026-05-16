@@ -5,5 +5,6 @@ make test:
 	../db/memtable.c \
 	../db/io_functions.c \
 	../db/skiplist.c \
+	../db/arena.c \
 	-o ../build/wal_test \
 	-lz

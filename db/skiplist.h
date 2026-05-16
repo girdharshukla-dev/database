@@ -4,7 +4,8 @@
 #include "slice.h"
 
 struct skiplist_type;
-struct skiplist_type *skiplist_create();
+struct arena_type;
+struct skiplist_type *skiplist_create(struct arena_type *arena);
 void skiplist_destroy(struct skiplist_type *sl);
 
 int skiplist_insert(struct skiplist_type *sl, const struct slice_type *key, const struct slice_type *value);
