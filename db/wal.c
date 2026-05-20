@@ -88,16 +88,18 @@ int wal_replay(struct wal_type *wal, struct memtable_type *mt) {
     //   return -1;
 
     ssize_t n = attempt_full_read(wal->fd, &key_length, sizeof(key_length));
-    if(n == 0){ //EOF
+    if (n == 0) { // EOF
       break;
     }
-    if(n != sizeof(key_length)) return -1;
+    if (n != sizeof(key_length))
+      return -1;
 
     n = attempt_full_read(wal->fd, &value_length, sizeof(value_length));
-    if(n == 0){ //EOF
+    if (n == 0) { // EOF
       break;
     }
-    if(n != sizeof(value_length)) return -1;
+    if (n != sizeof(value_length))
+      return -1;
 
     int buffer_size =
         sizeof(key_length) + sizeof(value_length) + key_length + value_length;
@@ -105,9 +107,9 @@ int wal_replay(struct wal_type *wal, struct memtable_type *mt) {
     memcpy(buffer, &key_length, sizeof(key_length));
     memcpy(buffer + sizeof(key_length), &value_length, sizeof(value_length));
 
-    if (attempt_full_read(wal->fd, buffer + sizeof(key_length) + sizeof(value_length),
-                          key_length + value_length) !=
-        key_length + value_length) {
+    if (attempt_full_read(
+            wal->fd, buffer + sizeof(key_length) + sizeof(value_length),
+            key_length + value_length) != key_length + value_length) {
       free(buffer);
       return -1;
     }
@@ -119,24 +121,26 @@ int wal_replay(struct wal_type *wal, struct memtable_type *mt) {
       free(buffer);
       return -1;
     }
-    if(crc != stored_crc){
+    if (crc != stored_crc) {
       free(buffer);
       return -1;
     }
 
-    buffer += sizeof(key_length) + sizeof(value_length);
+    uint8_t *ptr = buffer;
 
-    const struct slice_type key = {
-      .data = buffer,
-      .length = key_length
-    };
+    ptr += sizeof(key_length) + sizeof(value_length);
 
-    const struct slice_type value = {
-      .data = buffer + key_length,
-      .length = value_length
-    };
+    const struct slice_type key = {.data = ptr, .length = key_length};
 
-    memtable_put(mt, &key, &value);
-    
+    const struct slice_type value = {.data = ptr + key_length,
+                                     .length = value_length};
+
+    if (memtable_put(mt, &key, &value) == -1) {
+      free(buffer);
+      return -1;
+    }
+
+    free(buffer);
   }
+  return 0;
 }
