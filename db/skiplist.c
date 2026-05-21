@@ -54,6 +54,9 @@ static struct sl_node *create_node(struct slice_type key,
   n->key = key;
   n->value = value;
   
+  // in previous versions this used arena, but now since the levels are randomized ... the chosen
+  // levles during replay might be greater that previous during original inserts thus exceeding 
+  // the memtable size and breaking the assume 1 wal <-> 1 memtable
   n->next = malloc((level + 1) * sizeof(struct sl_node *));
   
   if (n->next == NULL) {
