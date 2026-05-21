@@ -37,6 +37,7 @@ struct memtable_type *memtable_create(void) {
 }
 
 void memtable_destroy(struct memtable_type *mt) {
+  skiplist_destroy(mt->sl);
   free(mt->arena_buffer);
   free(mt);
 }

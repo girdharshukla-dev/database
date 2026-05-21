@@ -23,9 +23,16 @@ struct db_type {
 };
 
 // each wal maps to a memtable, during flushing correpsonding wals will be deleted
+// at a time there will be only MAX_IMMUTABLE_MEMTABLE_COUNT number of wals only
 // oldest memtable at the start of the immutable_mt and newest towards the end of the array
 
 struct db_type *db_open(const char *path) {
+
+  if(strlen(path) >= MAX_PATH_LENGTH){
+    fprintf(stderr, "db path too long\n");
+    return NULL;
+  }
+
   struct db_type *db = malloc(sizeof(struct db_type));
   
   if (db == NULL) {
@@ -77,14 +84,19 @@ struct db_type *db_open(const char *path) {
   }
 
   for(size_t i = 0; i < wal_count; i++){
+    
     struct memtable_type *mt = memtable_create();
     char wal_path[MAX_PATH_LENGTH];
     snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path, wal_ids[i]);
+    
     struct wal_type *temp_wal = wal_open(wal_path);
+    
     if(wal_replay(temp_wal, mt) == -1){
       fprintf(stderr, "Error in wal_replay in db_open\n");
       return NULL;
     }
+
+
     wal_close(temp_wal);
 
     db->immutable_mt[i] = mt;

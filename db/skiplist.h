@@ -10,6 +10,6 @@ void skiplist_destroy(struct skiplist_type *sl);
 
 int skiplist_insert(struct skiplist_type *sl, const struct slice_type *key, const struct slice_type *value);
 int skiplist_get(struct skiplist_type *sl, const struct slice_type *key, struct slice_type *value);
-
+void skiplist_destroy(struct skiplist_type *sl);
 
 #endif

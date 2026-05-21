@@ -20,4 +20,4 @@ db_test:
 	-lz
 
 clean:
-	rm ../build/*
+	rm -rf ../build/*

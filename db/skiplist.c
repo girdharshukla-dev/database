@@ -50,13 +50,17 @@ static struct sl_node *create_node(struct slice_type key,
     fprintf(stderr, "Error in allocating memory to sl_node\n");
     return NULL;
   }
+  
   n->key = key;
   n->value = value;
-  n->next = arena_alloc(arena, (level + 1) * sizeof(struct sl_node *));
+  
+  n->next = malloc((level + 1) * sizeof(struct sl_node *));
+  
   if (n->next == NULL) {
     fprintf(stderr, "Error in allocating memory to sl_node->next\n");
     return NULL;
   }
+
   for (size_t i = 0; i <= level; i++) {
     n->next[i] = NULL;
   }
@@ -128,5 +132,14 @@ int skiplist_get(struct skiplist_type *sl, const struct slice_type *key,
     }
   }
   return -1;
+}
+
+void skiplist_destroy(struct skiplist_type *sl){
+  struct sl_node *cur = sl->head;
+  while(cur != NULL){
+    struct sl_node *next = cur->next[0];
+    free(cur->next);
+    cur = next;
+  }
 }
 
