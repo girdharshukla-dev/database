@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define ALIGNMENT 16
+#define ARENA_ALIGNMENT 16
 
 struct arena_type {
   uint8_t *buffer_base;
@@ -35,7 +35,7 @@ static inline void *arena_alloc_aligned(struct arena_type *arena, size_t size,
 }
 
 static inline void *arena_alloc(struct arena_type *arena, size_t size) {
-  return arena_alloc_aligned(arena, size, ALIGNMENT);
+  return arena_alloc_aligned(arena, size, ARENA_ALIGNMENT);
 }
 
 static inline void arena_init(struct arena_type *arena, void *buffer,

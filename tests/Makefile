@@ -1,4 +1,4 @@
-make wal_test:
+wal_test:
 	gcc -I../db \
 	wal_test.c \
 	../db/wal.c \
@@ -8,7 +8,7 @@ make wal_test:
 	-o ../build/wal_test \
 	-lz
 
-make db_test:
+db_test:
 	gcc -I../db \
 	db_test.c \
 	../db/db.c \
@@ -19,5 +19,5 @@ make db_test:
 	-o ../build/db_test \
 	-lz
 
-make clean:
+clean:
 	rm ../build/*

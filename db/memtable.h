@@ -12,4 +12,7 @@ int memtable_put(struct memtable_type *mt, const struct slice_type *key, const s
 
 int memtable_get(struct memtable_type *mt, const struct slice_type *key, struct slice_type *value);
 
+// a key is assumed as deleted if the value.length = 0
+int memtable_delete(struct memtable_type *mt, const struct slice_type *key);
+
 #endif

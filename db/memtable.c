@@ -1,11 +1,11 @@
 #include "memtable.h"
 #include "skiplist.h"
 #include "arena.h"
+#include "config.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#define MEMTABLE_ARENA_SIZE (16 * 1024 * 1024)
 
 struct memtable_type {
   uint8_t *arena_buffer;
@@ -61,9 +61,18 @@ int memtable_put(struct memtable_type *mt, const struct slice_type *key,
 int memtable_get(struct memtable_type *mt, const struct slice_type *key,
                  struct slice_type *value) {
   int res = skiplist_get(mt->sl, key, value);
-  if (res != 0)
-    return -1;
-  if (value->length == 0)
+  if (res != 0 || value->length == 0)
     return -1;
   return 0;
 }
+
+int memtable_delete(struct memtable_type *mt, const struct slice_type *key){
+  const struct slice_type value = {
+    .data = NULL,
+    .length = 0
+  };
+  
+  return memtable_put(mt, key, &value);
+}
+
+

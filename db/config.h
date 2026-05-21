@@ -1,0 +1,8 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define MEMTABLE_ARENA_SIZE (16 * 1024 * 1024)
+#define MAX_IMMUTABLE_MEMTABLE_COUNT 16
+#define MAX_PATH_LENGTH 20
+
+#endif

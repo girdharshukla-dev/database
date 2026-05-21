@@ -3,7 +3,12 @@
 
 #include "slice.h"
 
-struct wal_type;
+struct wal_type {
+  int fd;
+  uint64_t id;
+  char path[256];
+};
+
 struct wal_type *wal_open(const char *path);
 void wal_close(struct wal_type *wal);
 
