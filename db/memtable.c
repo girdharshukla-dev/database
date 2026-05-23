@@ -76,4 +76,7 @@ int memtable_delete(struct memtable_type *mt, const struct slice_type *key){
   return memtable_put(mt, key, &value);
 }
 
+struct skiplist_type *mt_skiplist(struct memtable_type *mt){
+  return mt->sl;
+}
 

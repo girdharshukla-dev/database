@@ -127,7 +127,8 @@ int db_put(struct db_type *db, const struct slice_type *key,
 
   // the memtable insertion is done first to avoid appending to wrong wal incase memtable max size is
   // reached or anyother invariant where memtable insertion fails and leading to append to a wrong wal
-
+  // since reverting an wal_append is not allowed, also success is only returned after wal_append
+  // succeeds ensuring synchronized memtable and wal
 
   if(memtable_put(db->active_mt, key, value) == -1){
     if(db->immutable_count == MAX_IMMUTABLE_MEMTABLE_COUNT){

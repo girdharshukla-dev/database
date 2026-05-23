@@ -15,4 +15,7 @@ int memtable_get(struct memtable_type *mt, const struct slice_type *key, struct 
 // a key is assumed as deleted if the value.length = 0
 int memtable_delete(struct memtable_type *mt, const struct slice_type *key);
 
+struct skiplist_type;
+struct skiplist_type *mt_skiplist(struct memtable_type *mt);
+
 #endif

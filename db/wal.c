@@ -13,6 +13,12 @@
 #include <zlib.h>
 #include <string.h>
 
+struct wal_type {
+  int fd;
+  uint64_t id;
+  char path[256];
+};
+
 struct wal_type *wal_open(const char *path) {
   struct wal_type *wal = malloc(sizeof(struct wal_type));
   if (!wal)

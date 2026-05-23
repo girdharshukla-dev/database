@@ -21,6 +21,10 @@ struct skiplist_type {
   int max_level;
 };
 
+struct skiplist_iter{
+  struct sl_node *current;
+};
+
 int slice_cmp(const struct slice_type *a, const struct slice_type *b) {
   uint64_t min = a->length < b->length ? a->length : b->length;
   int r = memcmp(a->data, b->data, min);
@@ -138,6 +142,9 @@ int skiplist_get(struct skiplist_type *sl, const struct slice_type *key,
 }
 
 void skiplist_destroy(struct skiplist_type *sl){
+  if(sl == NULL){
+    return;
+  }
   struct sl_node *cur = sl->head;
   while(cur != NULL){
     struct sl_node *next = cur->next[0];
@@ -145,4 +152,38 @@ void skiplist_destroy(struct skiplist_type *sl){
     cur = next;
   }
 }
+
+
+struct skiplist_iter *skiplist_iter_create(struct skiplist_type *sl){
+  if(sl == NULL) return NULL;
+  
+  struct skiplist_iter *sl_iter = malloc(sizeof(*sl_iter));
+
+  if(sl_iter == NULL) return NULL;
+
+  sl_iter->current = sl->head->next[0];
+  return sl_iter;
+}
+
+int skiplist_iter_valid(struct skiplist_iter *sl_iter){
+  return sl_iter->current != NULL;
+}
+
+void skiplist_iter_next(struct skiplist_iter *sl_iter){
+  sl_iter->current = sl_iter->current->next[0];
+}
+
+const struct slice_type *skiplist_iter_key(const struct skiplist_iter *sl_iter){
+  return &sl_iter->current->key;
+}
+
+const struct slice_type *skiplist_iter_value(const struct skiplist_iter *sl_iter){
+  return &sl_iter->current->value;
+}
+
+void skiplist_iter_destroy(struct skiplist_iter *sl_iter){
+  free(sl_iter);
+}
+
+
 
