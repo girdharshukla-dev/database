@@ -1,0 +1,21 @@
+## Ideas
+
+- immutable memtables
+- wal rotation , with one wal corresponding to 1 memtable 
+- sstable to be compacted size-tiered and not just the last 2 but more 
+- memtable not to be flushed into the sstable as plain records but blocks(maybe 4kb pages), adding offsets/indexes for faster reads
+- compaction should be done in the background .... compact sstable first into a temporary file 
+- allow multiple clients .... serialize to a single writer
+- [IMPORTANT] add some kinda manifest thing, since what if sstable_fush succeeds but process crashes during old wals deletion, this may lead to duplicate sstable in case of a db_open again
+
+
+-- It is time to add manifest file,
+- so there might be this case where process crashes, and immutable wals reached their max limit 
+number , so here the active wal is +1 more than the MAX_IMMUTABLE_MEMTABLE_COUNT, so after this now
+when db_open happens, on restart, the process sees that there are more wals that max immutable count,
+and this might happen any number of time again leading +N than MAX_IMMUTABLE_MEMTABLE_COUNT. So the 
+initial assumption of that there can only be MAX_IMMUTABLE_MEMTABLE_COUNT number of wal is violated.
+Also even if we somehow manage to solve this issue, but treating all wals as not flushed and thus
+trying to construct immutable memtable for all wals and again eventually flushing .... it will in 
+the long run lead to a number of redundant sstables ... also now somehow the order has to be managed 
+and remembered in some way although at this moment ids in the file naming solve this.
