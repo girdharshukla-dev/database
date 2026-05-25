@@ -103,8 +103,7 @@ int sstable_flush(struct memtable_type *immutable_mt[], size_t count,
       return -1;
     }
 
-    if (value->length > 0 &&
-        attempt_full_write(sstable_fd, value->data, value->length) !=
+    if (attempt_full_write(sstable_fd, value->data, value->length) !=
             value->length) {
       sstable_flush_iters_destroy(sl_iters, count);
       close(sstable_fd);
@@ -203,6 +202,11 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
     }
     
     if(memcmp(target_key->data, buffer, target_key->length) == 0){
+      if(value_length == 0){  // tombstone
+        close(sstable_fd);
+        free(buffer);
+        return -2;
+      }
       memcpy(out->data, buffer + target_key->length, value_length);
       out->length = value_length;
       close(sstable_fd);
