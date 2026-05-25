@@ -17,7 +17,7 @@ struct db_type {
   struct wal_type *active_wal;
   struct memtable_type *active_mt;
 
-  struct memtable_type *immutable_mt[MAX_IMMUTABLE_MEMTABLE_COUNT];
+  struct memtable_type *immutable_mt[MAX_IMMUTABLE_MEMTABLE_COUNT + 2];
   size_t sstable_ids[MAX_SSTABLE_COUNT];
 
   size_t immutable_count;
@@ -30,6 +30,8 @@ struct db_type {
 };
 
 static int scan_sstables(struct db_type *db);
+static int db_flush_immutable_mt(struct db_type *db);
+
 
 // each wal maps to a memtable, during flushing correpsonding wals will be
 // deleted at a time there will be only MAX_IMMUTABLE_MEMTABLE_COUNT number of
@@ -45,14 +47,15 @@ struct db_type *db_open(const char *path) {
   }
 
   struct db_type *db = malloc(sizeof(struct db_type));
-
+  
   if (db == NULL) {
     fprintf(stderr, "Error in allocating memory to db in db_open\n");
     return NULL;
   }
-
+  
   strncpy(db->db_path, path, MAX_PATH_LENGTH - 1);
   db->db_path[MAX_PATH_LENGTH - 1] = '\0';
+  mkdir(db->db_path, 0755);
 
   char wal_dir[MAX_PATH_LENGTH];
   snprintf(wal_dir, sizeof(wal_dir), "%s/wal", db->db_path);
@@ -82,6 +85,7 @@ struct db_type *db_open(const char *path) {
   }
 
   closedir(dir);
+  fprintf(stderr, "In db_open after closedir, wal_count: %zu\n", wal_count);
 
   for (size_t i = 0; i < wal_count; i++) {
     size_t min = i;
@@ -112,7 +116,7 @@ struct db_type *db_open(const char *path) {
     }
 
     if (wal_replay(temp_wal, mt) == -1) {
-      fprintf(stderr, "Error in wal_replay in db_open\n");
+      fprintf(stderr, "Error in wal_replay in db_open, wal_id: %zu\n", wal_ids[i]);
       abort();
     }
 
@@ -215,7 +219,7 @@ int db_get(struct db_type *db, const struct slice_type *key,
 
   for(int i = db->sstable_count - 1; i >= 0; i--){
     char sstable_path[MAX_PATH_LENGTH];
-    snprintf(sstable_path, "%s/sstable/sst_%zu.sstable", db->db_path, db->sstable_ids[i]);
+    snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu.sstable", db->db_path, db->sstable_ids[i]);
     int resp = sstable_get(sstable_path, key, value);
     if(resp == 0){
       return 0;
@@ -293,7 +297,7 @@ static int scan_sstables(struct db_type *db) {
 
 static int db_flush_immutable_mt(struct db_type *db) {
   char sstable_path[MAX_PATH_LENGTH];
-  snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu.sstable",
+  snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu",
            db->db_path, db->next_sst_id);
 
   if(sstable_flush(db->immutable_mt, db->immutable_count, sstable_path) == -1){
@@ -307,12 +311,13 @@ static int db_flush_immutable_mt(struct db_type *db) {
     // deleting the wals in reverse order ... next_wal_id - 1 is the active_wal
     snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path, db->next_wal_id - 2 - i);
 
+    fprintf(stderr, "trying to delete wal id: %zu, next_wal_id: %zu, immutable_count: %zu, i: %zu\n",  db->next_wal_id - 2 - i, db->next_wal_id, db->immutable_count, i);
     if(unlink(wal_path) == -1){
       fprintf(stderr, "Error in deleting wal file in db_flush_immutable_mt\n");
       return -1;
     }
 
-    memtable_destroy(db->immutable_mt[db->next_wal_id - 2 - i]);
+    memtable_destroy(db->immutable_mt[i]);
   }
 
   db->immutable_count = 0;

@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 
 static void sstable_flush_iters_destroy(struct skiplist_iter *sl_iters[],
                                         size_t count) {

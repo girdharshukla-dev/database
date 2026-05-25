@@ -16,6 +16,7 @@ db_test:
 	../db/memtable.c \
 	../db/io_functions.c \
 	../db/skiplist.c \
+	../db/sstable.c \
 	-o ../build/db_test \
 	-lz
 

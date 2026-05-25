@@ -16,7 +16,9 @@ struct arena_type {
 
 static inline void *arena_alloc_aligned(struct arena_type *arena, size_t size,
                                         size_t align) {
-  assert((align & (align - 1)) == 0);
+  if((align & (align - 1)) != 0){
+    return NULL;
+  }
 
   uintptr_t ptr =
       (uintptr_t)arena->buffer_base + (uintptr_t)arena->current_offset;
