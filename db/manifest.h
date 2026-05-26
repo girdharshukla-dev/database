@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 // -> NEXT_WAL_ID=43    // self explanatory name
 // -> OLDEST_WAL_ID=24  // the last wal which has to be taken into account,
@@ -26,6 +27,8 @@ struct manifest_type {
   uint64_t next_sstable_id;
 };
 
+static int manifest_store(const char *db_path, const struct manifest_type *manifest);
+
 static int manifest_init(const char *db_path) {
   struct manifest_type manifest;
   memset(&manifest, 0, sizeof(manifest));
@@ -41,7 +44,7 @@ static int manifest_load(const char *db_path, struct manifest_type *out) {
     return -1;
   }
 
-  if (attempt_full_read(fd, out, sizeof(out)) != sizeof(out)) {
+  if (attempt_full_read(fd, out, sizeof(*out)) != sizeof(*out)) {
     close(fd);
     return -1;
   }
@@ -58,8 +61,8 @@ static int manifest_store(const char *db_path,
   char temp_path[MAX_PATH_LENGTH];
   char final_path[MAX_PATH_LENGTH];
 
-  snprintf(temp_path, sizeof(temp_path), "%s/mainfest.tmp", db_path);
-  snprintf(final_path, sizeof(final_path), "%s/mainfest.txt", db_path);
+  snprintf(temp_path, sizeof(temp_path), "%s/manifest.tmp", db_path);
+  snprintf(final_path, sizeof(final_path), "%s/manifest.txt", db_path);
 
   int fd = open(temp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (fd < 0) {
@@ -98,12 +101,6 @@ static int manifest_store(const char *db_path,
 
   close(dir_fd);
 
-  return 0;
-}
-
-static int manifest_add_sstable(struct manifest_type *manifest,
-                                uint64_t sstable_id) {
-  manifest->live_sst[manifest->live_sstable_count++] = sstable_id;
   return 0;
 }
 
