@@ -3,6 +3,7 @@
 #include "wal.h"
 #include "config.h"
 #include "sstable.h"
+#include "manifest.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -17,28 +18,23 @@ struct db_type {
   struct wal_type *active_wal;
   struct memtable_type *active_mt;
 
-  struct memtable_type *immutable_mt[MAX_IMMUTABLE_MEMTABLE_COUNT + 2];
-  size_t sstable_ids[MAX_SSTABLE_COUNT];
-
+  struct memtable_type *immutable_mt[MAX_IMMUTABLE_MEMTABLE_COUNT];
   size_t immutable_count;
-  size_t next_wal_id;
 
-  size_t sstable_count;
-  size_t next_sst_id;
+  struct manifest_type manifest;
 
   char db_path[MAX_PATH_LENGTH];
 };
 
-static int scan_sstables(struct db_type *db);
 static int db_flush_immutable_mt(struct db_type *db);
 
 
-// each wal maps to a memtable, during flushing correpsonding wals will be
-// deleted at a time there will be only MAX_IMMUTABLE_MEMTABLE_COUNT number of
-// wals only oldest memtable at the start of the immutable_mt and newest towards
-// the end of the array same ordering of sstable as in memtable, oldest ...->
-// newest wal naming -> path/wal/wal_%zu.log, sstable naming ->
-// path/sstable/sst_%zu.sstable
+// each wal maps to a memtable, after flushing correpsonding wals will be deleted
+// the wals are contagious from manifest.oldest_wal_id to next_wal_id
+// oldest memtable at the start of the immutable_mt and newest towards
+// the end of the array, same ordering of sstable as in memtable, oldest ...->
+// newest wal naming -> path/wal/wal_%zu.log, sstable naming -> path/sstable/sst_%zu.sstable
+// manifest path as path/manifest.txt
 struct db_type *db_open(const char *path) {
 
   if (strlen(path) >= MAX_PATH_LENGTH) {
@@ -60,95 +56,82 @@ struct db_type *db_open(const char *path) {
   char wal_dir[MAX_PATH_LENGTH];
   snprintf(wal_dir, sizeof(wal_dir), "%s/wal", db->db_path);
   mkdir(wal_dir, 0755);
+  
+  char sstable_dir[MAX_PATH_LENGTH];
+  snprintf(sstable_dir, sizeof(sstable_dir), "%s/sstable", db->db_path);
+  mkdir(sstable_dir, 0755);
 
-  size_t max_id = 0;
 
-  DIR *dir = opendir(wal_dir);
-  if (dir == NULL) {
-    fprintf(stderr, "opendir failed in db_open\n");
-    free(db);
-    return NULL;
-  }
-
-  struct dirent *entry;
-  size_t wal_count = 0;
-  size_t wal_ids[MAX_IMMUTABLE_MEMTABLE_COUNT];
-
-  while ((entry = readdir(dir)) != NULL) {
-    size_t id;
-    if (sscanf(entry->d_name, "wal_%zu.log", &id) == 1) {
-      if (id > max_id) {
-        max_id = id;
-      }
-      wal_ids[wal_count++] = id;
+  if(manifest_load(db->db_path, &db->manifest) == -1){
+    if(manifest_init(db->db_path) == -1){
+      fprintf(stderr, "Error in manifest_init in db_open\n");
+      abort();
+    }
+    if(manifest_load(db->db_path, &db->manifest) == -1){
+      fprintf(stderr, "Error in manifest_load in db_open\n");
+      abort();
     }
   }
 
-  closedir(dir);
-  fprintf(stderr, "In db_open after closedir, wal_count: %zu\n", wal_count);
+  db->immutable_count = 0;
 
-  for (size_t i = 0; i < wal_count; i++) {
-    size_t min = i;
-    for (int j = i + 1; j < wal_count; j++) {
-      if (wal_ids[j] < wal_ids[min])
-        min = j;
-    }
-    size_t temp = wal_ids[min];
-    wal_ids[min] = wal_ids[i];
-    wal_ids[i] = temp;
-  }
-
-  for (size_t i = 0; i < wal_count; i++) {
-
+  for(size_t wal_id = db->manifest.oldest_wal_id; wal_id < db->manifest.next_wal_id; wal_id++){
+    
     struct memtable_type *mt = memtable_create();
-    if (mt == NULL) {
-      fprintf(stderr, "Error in wal_replay in memtable_create in db_open\n");
+    if(mt == NULL){
+      fprintf(stderr, "Error in memtable_create in db_open\n");
       abort();
     }
+
     char wal_path[MAX_PATH_LENGTH];
-    snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path,
-             wal_ids[i]);
-
+    snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path, wal_id);
     struct wal_type *temp_wal = wal_open(wal_path);
-    if (temp_wal == NULL) {
-      fprintf(stderr, "Error in temp_wal in db_open\n");
+    if(temp_wal == NULL){
+      fprintf(stderr, "Error in wal_open in db_open\n");
       abort();
     }
 
-    if (wal_replay(temp_wal, mt) == -1) {
-      fprintf(stderr, "Error in wal_replay in db_open, wal_id: %zu\n", wal_ids[i]);
+    if(wal_replay(temp_wal, mt) == -1){
+      fprintf(stderr, "Error in wal_replay in db_open\n");
       abort();
     }
 
     wal_close(temp_wal);
 
-    db->immutable_mt[i] = mt;
+    db->immutable_mt[db->immutable_count++] = mt;
+
+    if(db->immutable_count >= MAX_IMMUTABLE_MEMTABLE_COUNT){
+      if(db_flush_immutable_mt(db) == -1){
+        fprintf(stderr, "Error in db_flush_memtable in db_open\n");
+        abort();
+      }
+    }
   }
 
-  db->immutable_count = wal_count;
-  db->next_wal_id = max_id + 1;
   char active_wal_path[MAX_PATH_LENGTH];
-  snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/wal_%zu.log",
-           db->db_path, db->next_wal_id++);
+  snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/wal_%zu.log", db->db_path, db->manifest.next_wal_id);
 
   db->active_wal = wal_open(active_wal_path);
-  if (db->active_wal == NULL) {
-    fprintf(stderr, "error in wal_open in db_open\n");
+  if(db->active_wal == NULL){
+    fprintf(stderr, "Error in wal_open for active wal in db_open\n");
+    abort();
+  }
+
+  db->manifest.next_wal_id++;
+
+  if(manifest_store(db->db_path, &db->manifest) == -1){
+    fprintf(stderr, "Error in manifest_store in db_open\n");
     abort();
   }
 
   db->active_mt = memtable_create();
-  if (db->active_mt == NULL) {
-    fprintf(stderr, "error in memtable_create in db_open\n");
-    abort();
-  }
-
-  if (scan_sstables(db) == -1) {
-    fprintf(stderr, "Error in scan_sstables in db_open\n");
+  if(db->active_mt == NULL){
+    fprintf(stderr, "Error in memtable_create for active mt in db_open\n");
     abort();
   }
 
   return db;
+
 }
 
 int db_put(struct db_type *db, const struct slice_type *key,
@@ -178,11 +161,17 @@ int db_put(struct db_type *db, const struct slice_type *key,
 
     char wal_path[MAX_PATH_LENGTH];
     snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path,
-             db->next_wal_id++);
+             db->manifest.next_wal_id++);
 
     db->active_wal = wal_open(wal_path);
     if (db->active_wal == NULL) {
       fprintf(stderr, "errror in wal_open in db_put\n");
+      abort();
+    }
+
+    db->manifest.next_wal_id++;
+    if(manifest_store(db->db_path, &db->manifest) == -1){
+      fprintf(stderr, "Error in manifest_store in db_put\n");
       abort();
     }
 
@@ -217,9 +206,9 @@ int db_get(struct db_type *db, const struct slice_type *key,
     }
   }
 
-  for(int i = db->sstable_count - 1; i >= 0; i--){
+  for(int i = (int)db->manifest.live_sstable_count - 1; i >= 0; i--){
     char sstable_path[MAX_PATH_LENGTH];
-    snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu.sstable", db->db_path, db->sstable_ids[i]);
+    snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu.sstable", db->db_path, db->manifest.live_sst[i]);
     int resp = sstable_get(sstable_path, key, value);
     if(resp == 0){
       return 0;
@@ -243,80 +232,34 @@ void db_close(struct db_type *db) {
   free(db);
 }
 
-static int scan_sstables(struct db_type *db) {
-  char sstable_dir[MAX_PATH_LENGTH];
-  snprintf(sstable_dir, sizeof(sstable_dir), "%s/sstable", db->db_path);
-
-  int mkdir_resp = mkdir(sstable_dir, 0755);
-  if (mkdir_resp == 0) {
-    db->next_sst_id = 0;
-    db->sstable_count = 0;
-    return 0;
-  } else if (mkdir_resp == -1 && errno == EEXIST) {
-
-    DIR *dir = opendir(sstable_dir);
-    if (dir == NULL) {
-      return -1;
-    }
-
-    struct dirent *entry;
-    size_t sstable_count = 0;
-    while ((entry = readdir(dir)) != NULL) {
-      size_t id;
-      if (sscanf(entry->d_name, "sst_%zu.sstable", &id) == 1) {
-        db->sstable_ids[sstable_count++] = id;
-      }
-    }
-
-    db->sstable_count = sstable_count;
-
-    for (size_t i = 0; i < sstable_count; i++) {
-      size_t min = i;
-      for (size_t j = i + 1; j < sstable_count; j++) {
-        if (db->sstable_ids[j] < db->sstable_ids[min]) {
-          min = j;
-        }
-      }
-      size_t temp = db->sstable_ids[i];
-      db->sstable_ids[i] = db->sstable_ids[min];
-      db->sstable_ids[min] = temp;
-    }
-    if (sstable_count == 0) {
-      db->next_sst_id = 0;
-    } else {
-      db->next_sst_id = db->sstable_ids[sstable_count - 1] + 1;
-    }
-
-    closedir(dir);
-  } else {
-    return -1;
-  }
-
-  return 0;
-}
 
 static int db_flush_immutable_mt(struct db_type *db) {
   char sstable_path[MAX_PATH_LENGTH];
   snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu",
-           db->db_path, db->next_sst_id);
+           db->db_path, db->manifest.next_sstable_id);
 
   if(sstable_flush(db->immutable_mt, db->immutable_count, sstable_path) == -1){
     return -1;
   }
 
-  db->sstable_ids[db->sstable_count++] = db->next_sst_id++;
+  size_t previous_old_wal_id = db->manifest.oldest_wal_id;
+
+  db->manifest.live_sst[db->manifest.live_sstable_count++] = db->manifest.next_sstable_id;
+  db->manifest.next_sstable_id++;
+  db->manifest.oldest_wal_id += db->immutable_count;
+
+  if(manifest_store(db->db_path, &db->manifest) == -1){
+    return -1;
+  }
+
+  for(size_t wal_id = previous_old_wal_id; wal_id < db->manifest.oldest_wal_id; wal_id++){
+    char wal_path[MAX_PATH_LENGTH];
+    snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path, wal_id);
+
+    unlink(wal_path);
+  }
 
   for(size_t i = 0; i < db->immutable_count; i++){
-    char wal_path[MAX_PATH_LENGTH];
-    // deleting the wals in reverse order ... next_wal_id - 1 is the active_wal
-    snprintf(wal_path, sizeof(wal_path), "%s/wal/wal_%zu.log", db->db_path, db->next_wal_id - 2 - i);
-
-    fprintf(stderr, "trying to delete wal id: %zu, next_wal_id: %zu, immutable_count: %zu, i: %zu\n",  db->next_wal_id - 2 - i, db->next_wal_id, db->immutable_count, i);
-    if(unlink(wal_path) == -1){
-      fprintf(stderr, "Error in deleting wal file in db_flush_immutable_mt\n");
-      return -1;
-    }
-
     memtable_destroy(db->immutable_mt[i]);
   }
 

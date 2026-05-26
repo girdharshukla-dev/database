@@ -1,9 +1,6 @@
 #ifndef DB_H
 #define DB_H
 
-
-#include "memtable.h"
-#include "wal.h"
 #include "slice.h"
 
 struct db_type;
