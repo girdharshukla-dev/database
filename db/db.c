@@ -71,7 +71,9 @@ struct db_type *db_open(const char *path) {
            db->db_path);
 
   if (access(flush_wal_path, F_OK) == 0) {
+    db->active_wal = NULL;
     db->active_mt = memtable_create();
+
     if (db->active_mt == NULL) {
       fprintf(stderr, "Error memtable_create in db_open\n");
     }
@@ -85,6 +87,7 @@ struct db_type *db_open(const char *path) {
       fprintf(stderr, "Error in wal_replay for flush wal in db_open\n");
       abort();
     }
+    wal_close(flush_wal);
 
     if (db_flush_memtable(db) == -1) {
       fprintf(stderr, "Error in db_flush_memtable in db_open\n");
@@ -92,8 +95,6 @@ struct db_type *db_open(const char *path) {
     }
 
     memtable_destroy(db->active_mt);
-
-    wal_close(flush_wal);
   }
 
   db->active_mt = memtable_create();
@@ -112,7 +113,7 @@ struct db_type *db_open(const char *path) {
       abort();
     }
 
-    if (wal_replay(temp_wal, db->active_mt) == 0) {
+    if (wal_replay(temp_wal, db->active_mt) == -1) {
       fprintf(stderr, "Error in wal_replay for active.log\n");
       abort();
     }
@@ -140,6 +141,23 @@ int db_put(struct db_type *db, const struct slice_type *key,
 
   if (memtable_put(db->active_mt, key, value) == -1) {
     if (db_flush_memtable(db) == -1) {
+      return -1;
+    }
+    
+    memtable_destroy(db->active_mt);
+
+    db->active_mt = memtable_create();
+    if(db->active_mt == NULL){
+      fprintf(stderr, "Error in memtable_create in db_put\n");
+      return -1;
+    }
+
+    char active_wal_path[MAX_PATH_LENGTH];
+    snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/active.log", db->db_path);
+    unlink(active_wal_path);
+    db->active_wal = wal_open(active_wal_path);
+    if(db->active_wal == NULL){
+      fprintf(stderr, "Error in wal_open in db_put\n");
       return -1;
     }
 
@@ -181,55 +199,59 @@ int db_get(struct db_type *db, const struct slice_type *key,
   return -1;
 }
 
-static int db_flush_memtable(struct db_type *db){
+static int db_flush_memtable(struct db_type *db) {
   char active_wal_path[MAX_PATH_LENGTH];
   char flush_wal_path[MAX_PATH_LENGTH];
   char sstable_path[MAX_PATH_LENGTH];
 
+  snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/active.log",
+           db->db_path);
+  snprintf(flush_wal_path, sizeof(flush_wal_path), "%s/wal/flush.log",
+           db->db_path);
+  snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu",
+           db->db_path, db->manifest.next_sstable_id);
 
-  snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/active.log", db->db_path);
-  snprintf(flush_wal_path, sizeof(flush_wal_path), "%s/wal/flush.log", db->db_path);
-  snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu", db->db_path, db->manifest.next_sstable_id);
-
-  wal_close(active_wal_path);
-  if(rename(active_wal_path, flush_wal_path) == -1){
-    fprintf(stderr, "Error in rename in db_flush_memtable\n");
-    return -1;
+  if (db->active_wal != NULL) {
+    wal_close(db->active_wal);
+    if (rename(active_wal_path, flush_wal_path) == -1) {
+      fprintf(stderr, "Error in rename in db_flush_memtable\n");
+      return -1;
+    }
   }
 
-  if(sstable_flush(db->active_mt, sstable_path) == -1){
+  if (sstable_flush(db->active_mt, sstable_path) == -1) {
     fprintf(stderr, "error in sstable_flush in db_flush_memtable\n");
     return -1;
   }
 
-  db->manifest.live_sst[db->manifest.live_sstable_count++] = db->manifest.next_sstable_id++;
-  if(manifest_store(db->db_path, &db->manifest) == -1){
+  db->manifest.live_sst[db->manifest.live_sstable_count++] =
+      db->manifest.next_sstable_id++;
+  if (manifest_store(db->db_path, &db->manifest) == -1) {
     fprintf(stderr, "error in manifest_store in db_flush_memtable\n");
     return -1;
   }
 
-  if(unlink(flush_wal_path) == -1){
+  if (unlink(flush_wal_path) == -1) {
     fprintf(stderr, "Error in unlink flush wal in db_flush_memtable\n");
     return -1;
   }
 
-  memtable_destroy(db->active_mt);
+  // memtable_destroy(db->active_mt);
 
-  db->active_mt = memtable_create();
-  if(db->active_mt == NULL){
-    fprintf(stderr, "Error in memtable_create in db_flush_memtable\n");
-    abort();
-  }
+  // db->active_mt = memtable_create();
+  // if(db->active_mt == NULL){
+  //   fprintf(stderr, "Error in memtable_create in db_flush_memtable\n");
+  //   abort();
+  // }
 
-  db->active_wal = wal_open(active_wal_path);
-  if(db->active_wal == NULL){
-    fprintf(stderr, "Error in wal_open in db_flush_memtable\n");
-    return -1;
-  }
+  // db->active_wal = wal_open(active_wal_path);
+  // if(db->active_wal == NULL){
+  //   fprintf(stderr, "Error in wal_open in db_flush_memtable\n");
+  //   return -1;
+  // }
 
   return 0;
 }
-
 
 void db_close(struct db_type *db) {
   wal_close(db->active_wal);
