@@ -11,17 +11,10 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-// -> NEXT_WAL_ID=43    // self explanatory name
-// -> OLDEST_WAL_ID=24  // the last wal which has to be taken into account,
-//                      // basicaly flushing has only happend till before this,
-//                      the wals >= 24 have not been flushed, this is the first
-//                      wal that must now be replayed
 // -> SSTABLE_COUNT
 // -> LIVE_SST=[0,1,3,4]
 // -> NEXT_SSTABLE_ID
 struct manifest_type {
-  uint64_t next_wal_id;
-  uint64_t oldest_wal_id;
   uint64_t live_sstable_count;
   uint64_t live_sst[MAX_SSTABLE_COUNT];
   uint64_t next_sstable_id;
