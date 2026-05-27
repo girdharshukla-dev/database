@@ -105,7 +105,7 @@ int main(void) {
       return -1;
     }
 
-    printf("KEY: %.*s , VALUE: %.*s , (out length = %zu)\n", (int)key.length, (char *)key.data, (int)out.length, (char *)out.data, out.length);
+    // printf("KEY: %.*s , VALUE: %.*s , (out length = %zu)\n", (int)key.length, (char *)key.data, (int)out.length, (char *)out.data, out.length);
   }
 
   db_close(db);

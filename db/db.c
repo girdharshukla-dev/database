@@ -236,20 +236,6 @@ static int db_flush_memtable(struct db_type *db) {
     return -1;
   }
 
-  // memtable_destroy(db->active_mt);
-
-  // db->active_mt = memtable_create();
-  // if(db->active_mt == NULL){
-  //   fprintf(stderr, "Error in memtable_create in db_flush_memtable\n");
-  //   abort();
-  // }
-
-  // db->active_wal = wal_open(active_wal_path);
-  // if(db->active_wal == NULL){
-  //   fprintf(stderr, "Error in wal_open in db_flush_memtable\n");
-  //   return -1;
-  // }
-
   return 0;
 }
 
