@@ -291,5 +291,11 @@ static int db_compact_sstables(struct db_type *db) {
     return -1;
   }
 
+  for(size_t i = 0; i < MAX_SSTABLES_COMPACTED; i++){
+    if(unlink(sstable_paths[i]) == -1){
+      fprintf(stderr, "[WARNING] unlink failed for sstable: ", sstable_paths[i]);
+    }
+  }
+
   return 0;
 }
