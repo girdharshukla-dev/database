@@ -24,7 +24,7 @@ struct db_type {
 };
 
 static int db_flush_memtable(struct db_type *db);
-static int db_compact_sstable(struct db_type *db);
+static int db_compact_sstables(struct db_type *db);
 
 // newest wal naming -> path/wal/wal_%zu.log, sstable naming ->
 // path/sstable/sst_%zu.sstable manifest path as path/manifest.txt there will be
@@ -238,8 +238,8 @@ static int db_flush_memtable(struct db_type *db) {
     return -1;
   }
 
-  if(db->manifest.live_sstable_count >= MAX_SSTABLE_COUNT){
-    if(db_compact_sstable(db) == -1){
+  if (db->manifest.live_sstable_count >= MAX_SSTABLE_COUNT) {
+    if (db_compact_sstables(db) == -1) {
       fprintf(stderr, "Error in db_compact_sstable in db_flush_memetable\n");
       return -1;
     }
@@ -256,18 +256,20 @@ void db_close(struct db_type *db) {
 }
 
 static int db_compact_sstables(struct db_type *db) {
-  char *sstable_paths[MAX_SSTABLES_COMPACTED];
+  char sstable_paths_storage[MAX_SSTABLES_COMPACTED][MAX_PATH_LENGTH];
+  const char *sstable_paths[MAX_SSTABLES_COMPACTED];
   for (size_t i = 0; i < MAX_SSTABLES_COMPACTED; i++) {
-    char path[MAX_PATH_LENGTH];
-    snprintf(path, sizeof(path), "%s/sstable/sst_%zu.sstable", db->db_path,
+    snprintf(sstable_paths_storage[i], sizeof(sstable_paths_storage[i]),
+             "%s/sstable/sst_%zu.sstable", db->db_path,
              db->manifest.live_sst[i]);
-    sstable_paths[i] = path;
+    sstable_paths[i] = sstable_paths_storage[i];
   }
 
-  int output_index = db->manifest.live_sst[0] + MAX_SSTABLES_COMPACTED - 1;
+
+  int output_id = db->manifest.next_sstable_id++;
   char output_path[MAX_PATH_LENGTH];
-  snprintf(output_path, sizeof(output_path), "%s/sstable/sst_%d.sstable",
-           db->db_path, output_index);
+  snprintf(output_path, sizeof(output_path), "%s/sstable/sst_%d",
+           db->db_path, output_id);
 
   if (sstable_compact(sstable_paths, MAX_SSTABLES_COMPACTED, output_path) ==
       -1) {
@@ -275,16 +277,19 @@ static int db_compact_sstables(struct db_type *db) {
     return -1;
   }
 
-  memmove(db->manifest.live_sst, db->manifest.live_sst + MAX_SSTABLES_COMPACTED - 1, (db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1) * sizeof(uint64_t));
-  
+  db->manifest.live_sst[0] = output_id;
+  memmove(db->manifest.live_sst + 1,
+          db->manifest.live_sst + MAX_SSTABLES_COMPACTED,
+          (db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED) *
+              sizeof(uint64_t));
 
-  db->manifest.live_sstable_count -= db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1;
-  
-  if(manifest_store(db->db_path, &db->manifest) == -1){
+  db->manifest.live_sstable_count =
+      db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1;
+
+  if (manifest_store(db->db_path, &db->manifest) == -1) {
     fprintf(stderr, "manifest_store failed in db_compact_sstable\n");
     return -1;
   }
 
   return 0;
 }
-

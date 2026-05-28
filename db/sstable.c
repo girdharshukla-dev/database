@@ -177,7 +177,7 @@ struct sstable_iter {
 int sstable_iter_next(struct sstable_iter *sst_iter);
 
 struct sstable_iter *sstable_iter_init(const char *path) {
-  struct sstable_iter *sst_iter = malloc(sizeof(sst_iter));
+  struct sstable_iter *sst_iter = malloc(sizeof(*sst_iter));
   if (sst_iter == NULL) {
     fprintf(stderr, "Error in sst_iter malloc in iter_init\n");
     return NULL;
@@ -186,9 +186,11 @@ struct sstable_iter *sstable_iter_init(const char *path) {
   sst_iter->fd = open(path, O_RDONLY);
   if (sst_iter->fd < 0) {
     fprintf(stderr, "error in fd open in sstable_iter_init\n");
-    return -1;
+    return NULL;
   }
 
+  sst_iter->key.data = NULL;
+  sst_iter->value.data = NULL;
   sst_iter->valid = 1;
   if (sstable_iter_next(sst_iter) == -1) {
     close(sst_iter->fd);
@@ -200,22 +202,30 @@ struct sstable_iter *sstable_iter_init(const char *path) {
 }
 
 int sstable_iter_next(struct sstable_iter *sst_iter) {
+
   free(sst_iter->key.data);
   free(sst_iter->value.data);
+
+  sst_iter->key.data = NULL;
+  sst_iter->value.data = NULL;
 
   uint32_t key_length, value_length;
 
   ssize_t n = attempt_full_read(sst_iter->fd, &key_length, sizeof(key_length));
-  if (n == -1 || n != sizeof(key_length)) {
-    fprintf(stderr, "Error in reading key_length in sstable_iter_next\n");
-    return -1;
-  }
   if (n == 0) {
     sst_iter->valid = 0;
     return 0;
   }
-
+  if (n == -1 || n != sizeof(key_length)) {
+    fprintf(stderr, "Error in reading key_length in sstable_iter_next\n");
+    return -1;
+  }
+  
   n = attempt_full_read(sst_iter->fd, &value_length, sizeof(value_length));
+  if (n == 0) {
+    sst_iter->valid = 0;
+    return 0;
+  }
   if (n == -1 || n != sizeof(value_length)) {
     fprintf(stderr, "Error in reading value_length in sstable_iter_next\n");
     return -1;
@@ -228,12 +238,12 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
   sst_iter->value.data = malloc(value_length);
 
   if (attempt_full_read(sst_iter->fd, sst_iter->key.data, key_length) !=
-      sizeof(key_length)) {
+      key_length) {
     fprintf(stderr, "Error in reading key_data in sst_iter_next\n");
     return -1;
   }
   if (attempt_full_read(sst_iter->fd, sst_iter->value.data, value_length) !=
-      sizeof(value_length)) {
+      value_length) {
     fprintf(stderr, "Error in reading value_data in sst_iter_next\n");
     return -1;
   }
@@ -242,8 +252,10 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
 }
 
 void sstable_iter_destroy(struct sstable_iter *sst_iter) {
-  free(sst_iter->key.data);
-  free(sst_iter->value.data);
+  if (sst_iter->key.data != NULL && sst_iter->value.data != NULL) {
+    free(sst_iter->key.data);
+    free(sst_iter->value.data);
+  }
   close(sst_iter->fd);
   free(sst_iter);
 }
@@ -284,7 +296,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
     ssize_t smallest = -1;
 
     for (size_t i = 0; i < count; i++) {
-      if (sst_iters[i]->valid) {
+      if (!sst_iters[i]->valid) {
         continue;
       }
       if (smallest == -1) {
@@ -307,7 +319,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
       if (!sst_iters[i]->valid)
         continue;
 
-      if (slice_cmp(&sst_iters[i]->key, &sst_iters[i]->value) == 0) {
+      if (slice_cmp(&sst_iters[i]->key, &sst_iters[smallest]->key) == 0) {
         winner = i;
       }
     }
@@ -372,7 +384,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
   char final_path[MAX_PATH_LENGTH];
   snprintf(final_path, sizeof(final_path), "%s.sstable", output_path);
 
-  if(rename(temp_sstable_path, final_path) == -1){
+  if (rename(temp_sstable_path, final_path) == -1) {
     unlink(temp_sstable_path);
     return -1;
   }
@@ -385,11 +397,11 @@ int sstable_compact(const char *sstable_paths[], size_t count,
   dir[length] = '\0';
 
   int dir_fd = open(dir, O_RDONLY);
-  if(dir_fd < 0){
+  if (dir_fd < 0) {
     return -1;
   }
 
-  if(fsync(dir_fd) == -1){
+  if (fsync(dir_fd) == -1) {
     close(dir_fd);
     return -1;
   }
@@ -397,5 +409,3 @@ int sstable_compact(const char *sstable_paths[], size_t count,
   close(dir_fd);
   return 0;
 }
-
-

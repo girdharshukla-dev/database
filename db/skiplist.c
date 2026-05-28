@@ -51,7 +51,7 @@ static struct sl_node *create_node(struct slice_type key,
                                    struct arena_type *arena) {
   struct sl_node *n = arena_alloc(arena, sizeof(struct sl_node));
   if (n == NULL) {
-    fprintf(stderr, "Error in allocating memory to sl_node\n");
+    fprintf(stderr, "[TRIGGER] Error in allocating memory to sl_node\n");
     return NULL;
   }
   

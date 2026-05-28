@@ -55,7 +55,7 @@ int main(void) {
     key.length = strlen(kbuf);
 
     if(db_get(db, &key, &out) == -1){
-      fprintf(stderr, "Error in db_get for: %d", i);
+      fprintf(stderr, "Error in db_get for: %d\n", i);
       return -1;
     }
 
@@ -105,7 +105,7 @@ int main(void) {
       return -1;
     }
 
-    // printf("KEY: %.*s , VALUE: %.*s , (out length = %zu)\n", (int)key.length, (char *)key.data, (int)out.length, (char *)out.data, out.length);
+    printf("KEY: %.*s , VALUE: %.*s , (out length = %zu)\n", (int)key.length, (char *)key.data, (int)out.length, (char *)out.data, out.length);
   }
 
   db_close(db);
