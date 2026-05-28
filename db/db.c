@@ -24,6 +24,7 @@ struct db_type {
 };
 
 static int db_flush_memtable(struct db_type *db);
+static int db_compact_sstable(struct db_type *db);
 
 // newest wal naming -> path/wal/wal_%zu.log, sstable naming ->
 // path/sstable/sst_%zu.sstable manifest path as path/manifest.txt there will be
@@ -143,20 +144,21 @@ int db_put(struct db_type *db, const struct slice_type *key,
     if (db_flush_memtable(db) == -1) {
       return -1;
     }
-    
+
     memtable_destroy(db->active_mt);
 
     db->active_mt = memtable_create();
-    if(db->active_mt == NULL){
+    if (db->active_mt == NULL) {
       fprintf(stderr, "Error in memtable_create in db_put\n");
       return -1;
     }
 
     char active_wal_path[MAX_PATH_LENGTH];
-    snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/active.log", db->db_path);
+    snprintf(active_wal_path, sizeof(active_wal_path), "%s/wal/active.log",
+             db->db_path);
     unlink(active_wal_path);
     db->active_wal = wal_open(active_wal_path);
-    if(db->active_wal == NULL){
+    if (db->active_wal == NULL) {
       fprintf(stderr, "Error in wal_open in db_put\n");
       return -1;
     }
@@ -189,7 +191,7 @@ int db_get(struct db_type *db, const struct slice_type *key,
   for (int i = db->manifest.live_sstable_count - 1; i >= 0; i--) {
     char sstable_path[MAX_PATH_LENGTH];
     snprintf(sstable_path, sizeof(sstable_path), "%s/sstable/sst_%zu.sstable",
-             db->db_path, i);
+             db->db_path, db->manifest.live_sst[i]);
 
     if (sstable_get(sstable_path, key, value) == 0) {
       return 0;
@@ -236,6 +238,13 @@ static int db_flush_memtable(struct db_type *db) {
     return -1;
   }
 
+  if(db->manifest.live_sstable_count >= MAX_SSTABLE_COUNT){
+    if(db_compact_sstable(db) == -1){
+      fprintf(stderr, "Error in db_compact_sstable in db_flush_memetable\n");
+      return -1;
+    }
+  }
+
   return 0;
 }
 
@@ -245,3 +254,37 @@ void db_close(struct db_type *db) {
 
   free(db);
 }
+
+static int db_compact_sstables(struct db_type *db) {
+  char *sstable_paths[MAX_SSTABLES_COMPACTED];
+  for (size_t i = 0; i < MAX_SSTABLES_COMPACTED; i++) {
+    char path[MAX_PATH_LENGTH];
+    snprintf(path, sizeof(path), "%s/sstable/sst_%zu.sstable", db->db_path,
+             db->manifest.live_sst[i]);
+    sstable_paths[i] = path;
+  }
+
+  int output_index = db->manifest.live_sst[0] + MAX_SSTABLES_COMPACTED - 1;
+  char output_path[MAX_PATH_LENGTH];
+  snprintf(output_path, sizeof(output_path), "%s/sstable/sst_%d.sstable",
+           db->db_path, output_index);
+
+  if (sstable_compact(sstable_paths, MAX_SSTABLES_COMPACTED, output_path) ==
+      -1) {
+    fprintf(stderr, "Errror in sstable_compact in db_compact_sstable\n");
+    return -1;
+  }
+
+  memmove(db->manifest.live_sst, db->manifest.live_sst + MAX_SSTABLES_COMPACTED - 1, (db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1) * sizeof(uint64_t));
+  
+
+  db->manifest.live_sstable_count -= db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1;
+  
+  if(manifest_store(db->db_path, &db->manifest) == -1){
+    fprintf(stderr, "manifest_store failed in db_compact_sstable\n");
+    return -1;
+  }
+
+  return 0;
+}
+

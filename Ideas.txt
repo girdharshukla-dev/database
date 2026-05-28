@@ -1,3 +1,5 @@
+// IGNORE THIS FILE
+
 ## Ideas
 
 - immutable memtables
@@ -7,6 +9,7 @@
 - compaction should be done in the background .... compact sstable first into a temporary file 
 - allow multiple clients .... serialize to a single writer
 - [IMPORTANT] add some kinda manifest thing, since what if sstable_fush succeeds but process crashes during old wals deletion, this may lead to duplicate sstable in case of a db_open again
+- sparse index/bloom filter/paging for sstable lookup
 
 
 -- It is time to add manifest file,
@@ -33,3 +36,16 @@ but if rename happens, now the manifest has to be updated ... now the MANIFEST w
 have a OLDEST_WAL_ID to be the first wal_id that is not flushed and also add the new sstable_id to 
 to the list of LIVE_SST
 - What if manifest gets corrupted while writing or not done fsync/fdatasync ....?
+
+
+
+-- [IMPORTANT] Remove all the ideas that were related to multithreaded solutions like background compaction/flushing 
+since the architecture is now chosen to be single threaded, maybe multi readers and multi writers 
+serialized to a single writer, but internally everything will be single threaded for now.
+- Instead now optimizations on other paths like sparse index/paging/bloom filters for the sstable 
+instead of naive lookup
+
+-- right now ... in sstable compaction , iters .... each sst_iter_next does a free of previous memory
+and a malloc for new key and value -> this is wasteful
+- Maybe in the future add a single background thread/process for compaction
+
