@@ -4,6 +4,7 @@
 #include "config.h"
 #include "sstable.h"
 #include "manifest.h"
+#include "debug.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -33,14 +34,14 @@ static int db_compact_sstables(struct db_type *db);
 struct db_type *db_open(const char *path) {
 
   if (strlen(path) >= MAX_PATH_LENGTH) {
-    fprintf(stderr, "db path too long\n");
+    LOG("db path too long\n");
     return NULL;
   }
 
   struct db_type *db = malloc(sizeof(struct db_type));
 
   if (db == NULL) {
-    fprintf(stderr, "Error in allocating memory to db in db_open\n");
+    DEBUG_LOG("Error in allocating memory to db in db_open\n");
     return NULL;
   }
 
@@ -58,11 +59,11 @@ struct db_type *db_open(const char *path) {
 
   if (manifest_load(db->db_path, &db->manifest) == -1) {
     if (manifest_init(db->db_path) == -1) {
-      fprintf(stderr, "Error in manifest_init in db_open\n");
+      LOG("Error in manifest_init in db_open\n");
       abort();
     }
     if (manifest_load(db->db_path, &db->manifest) == -1) {
-      fprintf(stderr, "Error in manifest_load in db_open\n");
+      LOG("Error in manifest_load in db_open\n");
       abort();
     }
   }
@@ -76,22 +77,22 @@ struct db_type *db_open(const char *path) {
     db->active_mt = memtable_create();
 
     if (db->active_mt == NULL) {
-      fprintf(stderr, "Error memtable_create in db_open\n");
+      DEBUG_LOG("Error memtable_create in db_open\n");
     }
     struct wal_type *flush_wal = wal_open(flush_wal_path);
     if (flush_wal == NULL) {
-      fprintf(stderr, "Error in flush wal_open in db_open\n");
+      LOG("Error in flush wal_open in db_open\n");
       abort();
     }
 
     if (wal_replay(flush_wal, db->active_mt) == -1) {
-      fprintf(stderr, "Error in wal_replay for flush wal in db_open\n");
+      LOG("Error in wal_replay for flush wal\n");
       abort();
     }
     wal_close(flush_wal);
 
     if (db_flush_memtable(db) == -1) {
-      fprintf(stderr, "Error in db_flush_memtable in db_open\n");
+      LOG("Error in db_flush_memtable in db_open\n");
       abort();
     }
 
@@ -100,7 +101,7 @@ struct db_type *db_open(const char *path) {
 
   db->active_mt = memtable_create();
   if (db->active_mt == NULL) {
-    fprintf(stderr, "Error memtable_create in db_open\n");
+    DEBUG_LOG("Error memtable_create in db_open\n");
   }
 
   char active_wal_path[MAX_PATH_LENGTH];
@@ -110,12 +111,12 @@ struct db_type *db_open(const char *path) {
   if (access(active_wal_path, F_OK) == 0) {
     struct wal_type *temp_wal = wal_open(active_wal_path);
     if (temp_wal == NULL) {
-      fprintf(stderr, "Error in wal_open in db_open for active.log\n");
+      LOG("Error in wal_open in for active.log\n");
       abort();
     }
 
     if (wal_replay(temp_wal, db->active_mt) == -1) {
-      fprintf(stderr, "Error in wal_replay for active.log\n");
+      LOG("Error in wal_replay for active.log\n");
       abort();
     }
 
@@ -124,7 +125,7 @@ struct db_type *db_open(const char *path) {
 
   db->active_wal = wal_open(active_wal_path);
   if (db->active_wal == NULL) {
-    fprintf(stderr, "Error in wal_open for active.log\n");
+    LOG("Error in wal_open for active.log\n");
     abort();
   }
 
@@ -149,7 +150,7 @@ int db_put(struct db_type *db, const struct slice_type *key,
 
     db->active_mt = memtable_create();
     if (db->active_mt == NULL) {
-      fprintf(stderr, "Error in memtable_create in db_put\n");
+      DEBUG_LOG("Error in memtable_create in db_put\n");
       return -1;
     }
 
@@ -159,23 +160,23 @@ int db_put(struct db_type *db, const struct slice_type *key,
     unlink(active_wal_path);
     db->active_wal = wal_open(active_wal_path);
     if (db->active_wal == NULL) {
-      fprintf(stderr, "Error in wal_open in db_put\n");
+      DEBUG_LOG("Error in wal_open in db_put\n");
       return -1;
     }
 
     if (memtable_put(db->active_mt, key, value) == -1) {
-      fprintf(stderr, "memtable_put error in db_put\n");
+      DEBUG_LOG("memtable_put error in db_put\n");
       return -1;
     }
   }
 
   if (wal_append(db->active_wal, key, value) == -1) {
-    fprintf(stderr, "Error in wal_append in db_put\n");
+    DEBUG_LOG("Error in wal_append in db_put\n");
     return memtable_delete(db->active_mt, key);
   }
 
   if (wal_sync(db->active_wal) == -1) {
-    fprintf(stderr, "Error in wal_sync in db_put\n");
+    LOG("Error in wal_sync in db_put\n");
     abort();
   }
 
@@ -216,31 +217,31 @@ static int db_flush_memtable(struct db_type *db) {
   if (db->active_wal != NULL) {
     wal_close(db->active_wal);
     if (rename(active_wal_path, flush_wal_path) == -1) {
-      fprintf(stderr, "Error in rename in db_flush_memtable\n");
+      DEBUG_LOG("Error in rename in db_flush_memtable\n");
       return -1;
     }
   }
 
   if (sstable_flush(db->active_mt, sstable_path) == -1) {
-    fprintf(stderr, "error in sstable_flush in db_flush_memtable\n");
+    DEBUG_LOG("error in sstable_flush in db_flush_memtable\n");
     return -1;
   }
 
   db->manifest.live_sst[db->manifest.live_sstable_count++] =
       db->manifest.next_sstable_id++;
   if (manifest_store(db->db_path, &db->manifest) == -1) {
-    fprintf(stderr, "error in manifest_store in db_flush_memtable\n");
+    DEBUG_LOG("error in manifest_store in db_flush_memtable\n");
     return -1;
   }
 
   if (unlink(flush_wal_path) == -1) {
-    fprintf(stderr, "Error in unlink flush wal in db_flush_memtable\n");
+    DEBUG_LOG("Error in unlink flush wal in db_flush_memtable\n");
     return -1;
   }
 
   if (db->manifest.live_sstable_count >= MAX_SSTABLE_COUNT) {
     if (db_compact_sstables(db) == -1) {
-      fprintf(stderr, "Error in db_compact_sstable in db_flush_memetable\n");
+      DEBUG_LOG("Error in db_compact_sstable in db_flush_memetable\n");
       return -1;
     }
   }
@@ -273,7 +274,7 @@ static int db_compact_sstables(struct db_type *db) {
 
   if (sstable_compact(sstable_paths, MAX_SSTABLES_COMPACTED, output_path) ==
       -1) {
-    fprintf(stderr, "Errror in sstable_compact in db_compact_sstable\n");
+    DEBUG_LOG("Errror in sstable_compact in db_compact_sstable\n");
     return -1;
   }
 
@@ -287,13 +288,13 @@ static int db_compact_sstables(struct db_type *db) {
       db->manifest.live_sstable_count - MAX_SSTABLES_COMPACTED + 1;
 
   if (manifest_store(db->db_path, &db->manifest) == -1) {
-    fprintf(stderr, "manifest_store failed in db_compact_sstable\n");
+    LOG("manifest_store failed in db_compact_sstable\n");
     return -1;
   }
 
   for(size_t i = 0; i < MAX_SSTABLES_COMPACTED; i++){
     if(unlink(sstable_paths[i]) == -1){
-      fprintf(stderr, "[WARNING] unlink failed for sstable: ", sstable_paths[i]);
+      LOG("[WARNING] unlink failed for sstable: %s", sstable_paths[i]);
     }
   }
 

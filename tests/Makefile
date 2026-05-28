@@ -1,5 +1,5 @@
 wal_test:
-	gcc -I../db \
+	gcc -DDEBUG -I../db \
 	wal_test.c \
 	../db/wal.c \
 	../db/memtable.c \
@@ -9,7 +9,7 @@ wal_test:
 	-lz
 
 db_test:
-	gcc -I../db \
+	gcc -DDEBUG -I../db \
 	db_test.c \
 	../db/db.c \
 	../db/wal.c \
@@ -21,7 +21,7 @@ db_test:
 	-lz
 
 db_replay_temp_test:
-	gcc -I../db \
+	gcc -DDEBUG -I../db \
 	db_replay_temp_test.c \
 	../db/db.c \
 	../db/wal.c \

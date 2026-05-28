@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <debug.h>
 
 #define SKIPLIST_MAX_LEVEL_COUNT 16
 
@@ -51,7 +52,7 @@ static struct sl_node *create_node(struct slice_type key,
                                    struct arena_type *arena) {
   struct sl_node *n = arena_alloc(arena, sizeof(struct sl_node));
   if (n == NULL) {
-    fprintf(stderr, "[TRIGGER] Error in allocating memory to sl_node\n");
+    DEBUG_LOG("[TRIGGER] Error in allocating memory to sl_node\n");
     return NULL;
   }
   
@@ -64,7 +65,7 @@ static struct sl_node *create_node(struct slice_type key,
   n->next = malloc((level + 1) * sizeof(struct sl_node *));
   
   if (n->next == NULL) {
-    fprintf(stderr, "Error in allocating memory to sl_node->next\n");
+    DEBUG_LOG("Error in allocating memory to sl_node->next\n");
     return NULL;
   }
 
@@ -77,7 +78,7 @@ static struct sl_node *create_node(struct slice_type key,
 struct skiplist_type *skiplist_create(struct arena_type *arena) {
   struct skiplist_type *sl = arena_alloc(arena, sizeof(struct skiplist_type));
   if (sl == NULL) {
-    fprintf(stderr, "Error in allocating memory to skiplist\n");
+    DEBUG_LOG("Error in allocating memory to skiplist\n");
     return NULL;
   }
   sl->arena = arena;

@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <debug.h>
 
 // first flush to to a .tmp file, when whole flushing succeeds, rename it to
 // .sstable sstable_path passed as something like /dir/sst_21
@@ -29,7 +30,7 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
 
   struct skiplist_iter *sl_iter = skiplist_iter_create(mt_skiplist(mt));
   if (sl_iter == NULL) {
-    fprintf(stderr, "Error in sl_iter creation in sstable_put\n");
+    DEBUG_LOG("Error in sl_iter creation in sstable_put\n");
     return -1;
   }
 
@@ -128,7 +129,7 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
     if (target_key->length != key_length) {
       if (lseek(sstable_fd, key_length + value_length, SEEK_CUR) == (off_t)-1) {
         close(sstable_fd);
-        fprintf(stderr, "Error in lseek in sstable_get\n");
+        DEBUG_LOG("Error in lseek in sstable_get\n");
         return -1;
       }
       continue;
@@ -136,7 +137,7 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
 
     uint8_t *buffer = malloc(key_length + value_length);
     if (buffer == NULL) {
-      fprintf(stderr, "Error in buffer malloc in sstable_get\n");
+      DEBUG_LOG("Error in buffer malloc in sstable_get\n");
       close(sstable_fd);
       return -1;
     }
@@ -179,13 +180,13 @@ int sstable_iter_next(struct sstable_iter *sst_iter);
 struct sstable_iter *sstable_iter_init(const char *path) {
   struct sstable_iter *sst_iter = malloc(sizeof(*sst_iter));
   if (sst_iter == NULL) {
-    fprintf(stderr, "Error in sst_iter malloc in iter_init\n");
+    DEBUG_LOG("Error in sst_iter malloc in iter_init\n");
     return NULL;
   }
 
   sst_iter->fd = open(path, O_RDONLY);
   if (sst_iter->fd < 0) {
-    fprintf(stderr, "error in fd open in sstable_iter_init\n");
+    DEBUG_LOG("error in fd open in sstable_iter_init\n");
     return NULL;
   }
 
@@ -217,7 +218,7 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
     return 0;
   }
   if (n == -1 || n != sizeof(key_length)) {
-    fprintf(stderr, "Error in reading key_length in sstable_iter_next\n");
+    DEBUG_LOG("Error in reading key_length in sstable_iter_next\n");
     return -1;
   }
   
@@ -227,7 +228,7 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
     return 0;
   }
   if (n == -1 || n != sizeof(value_length)) {
-    fprintf(stderr, "Error in reading value_length in sstable_iter_next\n");
+    DEBUG_LOG("Error in reading value_length in sstable_iter_next\n");
     return -1;
   }
 
@@ -239,12 +240,12 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
 
   if (attempt_full_read(sst_iter->fd, sst_iter->key.data, key_length) !=
       key_length) {
-    fprintf(stderr, "Error in reading key_data in sst_iter_next\n");
+    DEBUG_LOG("Error in reading key_data in sst_iter_next\n");
     return -1;
   }
   if (attempt_full_read(sst_iter->fd, sst_iter->value.data, value_length) !=
       value_length) {
-    fprintf(stderr, "Error in reading value_data in sst_iter_next\n");
+    DEBUG_LOG("Error in reading value_data in sst_iter_next\n");
     return -1;
   }
 
@@ -275,7 +276,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
 
   int temp_fd = open(temp_sstable_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (temp_fd < 0) {
-    fprintf(stderr, "Error in fd open in sstable_compact\n");
+    DEBUG_LOG("Error in fd open in sstable_compact\n");
     return -1;
   }
 
