@@ -2,6 +2,7 @@
 #include "skiplist.h"
 #include "arena.h"
 #include "config.h"
+#include "slice.h"
 
 #include <stdlib.h>
 #include <string.h>

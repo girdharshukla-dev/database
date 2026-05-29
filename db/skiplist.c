@@ -1,5 +1,6 @@
 #include "skiplist.h"
 #include "arena.h"
+#include "slice.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -135,7 +136,8 @@ int skiplist_get(struct skiplist_type *sl, const struct slice_type *key,
     while (cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) < 0)
       cur = cur->next[i];
     if (cur->next[i] != NULL && slice_cmp(&cur->next[i]->key, key) == 0) {
-      *value = cur->next[i]->value;
+      memcpy(value->data, cur->next[i]->value.data, cur->next[i]->value.length);
+      value->length = cur->next[i]->value.length;
       return 0;
     }
   }
