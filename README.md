@@ -150,7 +150,7 @@ struct slice_type value = {
     .length = sizeof(person_in)
 };
 
-db_put(db, &key, &value) != -1;
+db_put(db, &key, &value);
 
 struct person person_out;
 struct slice_type out = {
@@ -158,7 +158,7 @@ struct slice_type out = {
     .length = sizeof(person_out),
 };
 
-db_get(db, &key, &out) != -1;
+db_get(db, &key, &out);
 db_close(db);
 ```
 
