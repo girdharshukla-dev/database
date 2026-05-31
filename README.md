@@ -114,8 +114,8 @@ To use it in your application code, you can just include the db.h and slice.h in
 The data type to use for key and values is given in the slice.h.
 ```c
 struct slice_type{
-    uint8_t *data, 
-    uint32_t length
+    uint8_t *data;
+    uint32_t length;
 };
 ```
 The application is expected to pass a backing buffer for the data field. 
