@@ -38,11 +38,11 @@ live sstables and the count of sstables. (For more info about manifest.txt look 
 ### Write path
 1. The engine first tries to do a insertion into the active memtable. Then it appends to the wal. Correctness is still handled. 
 > `IMPORTANT NOTE` : This is different from the conventional way of first appending to the wal and then doing a memtable_insert, 
-since in this engine a single wal is expected to correspond to 1 memtable, so appending to an active 
-wal means it will definitely belong to the active memtables, though this might not be the case if the 
-active memtable has reached its maximum threshold size. 
-Correctness is still maintained through the fact that db_put only return success only after both memtable insert and the 
-wal append are completed (wal append done after a memtable flush if memtable max size reached).
+> since in this engine a single wal is expected to correspond to 1 memtable, so appending to an active 
+> wal means it will definitely belong to the active memtables, though this might not be the case if the 
+> active memtable has reached its maximum threshold size. 
+> Correctness is still maintained through the fact that db_put only return success only after both memtable insert and the 
+> wal append are completed (wal append done after a memtable flush if memtable max size reached).
 2. If the memtable insert fails because of the active memtable reaching its threshold size, 
 it freezes the active wal to `flush.log` and tries to flush it.
 This is done to enable crash recovery if process dies during the flush. The active memtable is then flushed to a sstable.
@@ -103,6 +103,8 @@ structure at the time of db initialization.
 
 
 ## Build instructions
+
+> The engine depends on just `zlib` as the only third party dependency. (`zlib` is used for crc32 computation)
 
 For the release build, just run the following command :
 ```bash
