@@ -41,8 +41,8 @@ db_test_profile:
 	../db/io_functions.c \
 	../db/skiplist.c \
 	../db/sstable.c \
-	-pg -g -o ../build/db_test_profile \
-	-lz
+	-g -o ../build/db_test_profile \
+	-lz && cd ../build/ && valgrind --tool=callgrind ./db_test_profile
 
 
 clean:
