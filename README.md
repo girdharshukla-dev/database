@@ -112,7 +112,8 @@ bash build.sh
 ```
 This will output a libkv.so, slice.h and a db.h in the `build/release` folder.
 
-To use it in your application code, you can just include the db.h and slice.h in your code.
+To use it in your application code, you can just include the `db.h` and `slice.h` in your code and 
+link against the `libkv.so` produced.
 The data type to use for key and values is given in the slice.h.
 ```c
 struct slice_type{
