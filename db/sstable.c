@@ -15,8 +15,144 @@
 // first flush to to a .tmp file, when whole flushing succeeds, rename it to
 // .sstable sstable_path passed as something like /dir/sst_21
 // sstable_path are mostly passed around as /dir/sst_21 without the .sstable
-// unless they dont need to be modified intermediately format is still
-// [key_length][value_length][key_data][value_data]
+// ... unless they dont need to be modified intermediately
+// format of a sstable is
+/*
+ *  [header] -> contains sparse index offset
+ *  [Block 1] -> multiple records of format
+ * [key_length][value_length][key_data][value_data] [Block 2] [Block 3]
+ *  ...
+ *  ...
+ *  ...       -> each block has a target size of BLOCK_SIZE but it is not a
+ * strict threshold
+ *  ...       -> if the last record overflow ... let it overflow
+ *  [sparse index] -> contains the first key of each block and its offset
+ *                 -> records as [key_length][key_data][offset]
+ */
+
+#define BLOCK_SIZE 4096
+
+struct sstable_header_type {
+  uint64_t sparse_index_offset;
+  size_t idx_count;
+};
+
+struct sparse_idx_entry_type {
+  struct slice_type key;
+  uint64_t offset;
+};
+
+struct sparse_idx_array {
+  struct sparse_idx_entry_type *entries;
+  size_t count;
+  size_t capacity;
+};
+
+static struct sparse_idx_array *idx_init(size_t size) {
+  struct sparse_idx_array *idx = malloc(sizeof(*idx));
+  if (idx == NULL) {
+    DEBUG_LOG("Error in malloc in idx_init\n");
+  }
+  idx->entries = malloc(size * sizeof(struct sparse_idx_entry_type));
+  idx->count = 0;
+  idx->capacity = size;
+  return idx;
+};
+
+static int idx_put(struct sparse_idx_entry_type element,
+                   struct sparse_idx_array *idx) {
+  if (idx->count >= idx->capacity) {
+    if ((idx->entries = realloc(idx->entries,
+                                idx->capacity * 2 * sizeof(*idx->entries))) ==
+        NULL) {
+      return -1;
+    }
+    idx->capacity *= 2;
+  }
+  idx->entries[idx->count++] = element;
+  return 0;
+}
+
+struct sstable_writer {
+  int fd;
+  struct sparse_idx_array *idx_array;
+  size_t used;
+  uint8_t block[BLOCK_SIZE];
+  struct slice_type first_key;
+};
+
+int sstable_kv_writer(struct sstable_writer *w, struct slice_type *key,
+                      struct slice_type *value) {
+  if (w->used == 0) {
+    memcpy(&w->first_key, key, sizeof(*key));
+  }
+
+  size_t record_size =
+      sizeof(key->length) + sizeof(value->length) + key->length + value->length;
+
+  if (w->used > 0 && w->used + record_size >= BLOCK_SIZE) {
+    off_t block_offset = lseek(w->fd, 0, SEEK_CUR);
+
+    int n = attempt_full_write(w->fd, w->block, w->used);
+
+    if (n == -1 || n != w->used) {
+      DEBUG_LOG("Error in flushing block");
+      return -1;
+    }
+
+    struct sparse_idx_entry_type entry = {.key = w->first_key,
+                                          .offset = block_offset};
+
+    idx_put(entry, w->idx_array);
+
+    w->used = 0;
+    memset(&w->first_key, 0, sizeof(w->first_key));
+    memset(w->block, 0, sizeof(w->block));
+
+  } else if (w->used == 0 && record_size > BLOCK_SIZE) {
+
+    uint8_t big_block[record_size];
+    memcpy(big_block + w->used, &key->length, sizeof(key->length));
+    w->used += sizeof(key->length);
+    memcpy(big_block + w->used, &value->length, sizeof(value->length));
+    w->used += sizeof(value->length);
+    memcpy(big_block + w->used, key->data, key->length);
+    w->used += key->length;
+    memcpy(big_block + w->used, value->data, value->length);
+    w->used += value->length;
+
+    off_t block_offset = lseek(w->fd, 0, SEEK_CUR);
+    int n = attempt_full_write(w->fd, big_block, w->used);
+
+    if (n == -1 || n != w->used) {
+      DEBUG_LOG("Error in flushing block\n");
+      return -1;
+    }
+
+    struct sparse_idx_entry_type entry = {.key = w->first_key,
+                                          .offset = block_offset};
+
+    idx_put(entry, w->idx_array);
+
+    w->used = 0;
+    memset(&w->first_key, 0, sizeof(w->first_key));
+    memset(w->block, 0, sizeof(w->block));
+
+    return 0;
+  }
+
+  memcpy(w->block + w->used, &key->length, sizeof(key->length));
+  w->used += sizeof(key->length);
+  memcpy(w->block + w->used, &value->length, sizeof(value->length));
+  w->used += sizeof(value->length);
+  memcpy(w->block + w->used, key->data, key->length);
+  w->used += key->length;
+  memcpy(w->block + w->used, value->data, value->length);
+  w->used += value->length;
+
+  return 0;
+}
+
 int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
 
   char sstable_temp_path[MAX_PATH_LENGTH];
@@ -28,47 +164,102 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
     return -1;
   }
 
+  struct sstable_header_type header = {0};
+  attempt_full_write(sstable_fd, &header, sizeof(header));
+
   struct skiplist_iter *sl_iter = skiplist_iter_create(mt_skiplist(mt));
   if (sl_iter == NULL) {
     DEBUG_LOG("Error in sl_iter creation in sstable_put\n");
     return -1;
   }
 
+
+  struct sstable_writer *w = malloc(sizeof(*w));
+  w->fd = sstable_fd;
+  w->idx_array = idx_init(64);
+  w->used = 0;
+  memset(&w->first_key, 0, sizeof(w->first_key));
+
   while (skiplist_iter_valid(sl_iter)) {
     const struct slice_type *key = skiplist_iter_key(sl_iter);
     const struct slice_type *value = skiplist_iter_value(sl_iter);
 
-    if (attempt_full_write(sstable_fd, &key->length, sizeof(key->length)) !=
-        sizeof(key->length)) {
-      skiplist_iter_destroy(sl_iter);
+    if(sstable_kv_writer(w, key, value) == -1){
       close(sstable_fd);
+      skiplist_iter_destroy(sl_iter);
+      unlink(sstable_temp_path);
+      DEBUG_LOG("Error in sstable_kv_writer in sstable_flush\n");
       return -1;
     }
-
-    if (attempt_full_write(sstable_fd, &value->length, sizeof(value->length)) !=
-        sizeof(value->length)) {
-      skiplist_iter_destroy(sl_iter);
-      close(sstable_fd);
-      return -1;
-    }
-
-    if (attempt_full_write(sstable_fd, key->data, key->length) != key->length) {
-      skiplist_iter_destroy(sl_iter);
-      close(sstable_fd);
-      return -1;
-    }
-
-    if (attempt_full_write(sstable_fd, value->data, value->length) !=
-        value->length) {
-      skiplist_iter_destroy(sl_iter);
-      close(sstable_fd);
-      return -1;
-    }
-
+    
     skiplist_iter_next(sl_iter);
+
+  }
+
+  if (w->used > 0) {
+    off_t block_offset = lseek(sstable_fd, 0, SEEK_CUR);
+    int n = attempt_full_write(sstable_fd, w->block, w->used);
+
+    if (n == -1 || n != w->used) {
+      DEBUG_LOG("Error in flushing block");
+      skiplist_iter_destroy(sl_iter);
+      close(sstable_fd);
+      unlink(sstable_temp_path);
+      return -1;
+    }
+
+    struct sparse_idx_entry_type entry = {.key = w->first_key,
+                                          .offset = block_offset};
+    idx_put(entry, w->idx_array);
+
+    w->used = 0;
+    memset(&w->first_key, 0, sizeof(w->first_key));
+    memset(w->block, 0, sizeof(w->block));
   }
 
   skiplist_iter_destroy(sl_iter);
+
+  size_t idx_offset = lseek(sstable_fd, 0, SEEK_CUR);
+  for (size_t i = 0; i < w->idx_array->count; i++) {
+    struct sparse_idx_entry_type entry = w->idx_array->entries[i];
+    struct slice_type entry_key = entry.key;
+    uint64_t entry_offset = entry.offset;
+
+    int n = attempt_full_write(sstable_fd, &entry_key.length,
+                               sizeof(entry_key.length));
+    if (n == -1) {
+      close(sstable_fd);
+      unlink(sstable_temp_path);
+      return -1;
+    }
+    n = attempt_full_write(sstable_fd, entry_key.data, entry_key.length);
+    if (n == -1) {
+      close(sstable_fd);
+      unlink(sstable_temp_path);
+      return -1;
+    }
+    n = attempt_full_write(sstable_fd, &entry.offset, sizeof(entry.offset));
+    if (n == -1) {
+      close(sstable_fd);
+      unlink(sstable_temp_path);
+      return -1;
+    }
+  }
+
+  header.sparse_index_offset = idx_offset;
+  header.idx_count = w->idx_array->count;
+  lseek(sstable_fd, 0, SEEK_SET);
+  if (attempt_full_write(sstable_fd, &header, sizeof(header)) !=
+      sizeof(header)) {
+    close(sstable_fd);
+    unlink(sstable_temp_path);
+    DEBUG_LOG("Error in writing header\n");
+    return -1;
+  }
+
+  free(w->idx_array->entries);
+  free(w->idx_array);
+  free(w);
 
   if (fdatasync(sstable_fd) == -1) {
     close(sstable_fd);
@@ -221,7 +412,7 @@ int sstable_iter_next(struct sstable_iter *sst_iter) {
     DEBUG_LOG("Error in reading key_length in sstable_iter_next\n");
     return -1;
   }
-  
+
   n = attempt_full_read(sst_iter->fd, &value_length, sizeof(value_length));
   if (n == 0) {
     sst_iter->valid = 0;
