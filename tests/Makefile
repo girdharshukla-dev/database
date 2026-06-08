@@ -44,6 +44,16 @@ db_test_profile:
 	-g -o ../build/db_test_profile \
 	-lz && cd ../build/ && valgrind --tool=callgrind ./db_test_profile
 
+db_debug_build:
+	gcc -DDEBUG -shared -fPIC -flto \
+    ../db/db.c \
+    ../db/wal.c \
+    ../db/memtable.c \
+    ../db/io_functions.c \
+    ../db/skiplist.c \
+    ../db/sstable.c \
+    -I../db -O3 -o "../build/libkv.so" -lz
+
 
 clean:
 	rm -rf ../build/*

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <debug.h>
+#include <errno.h>
 
 // first flush to to a .tmp file, when whole flushing succeeds, rename it to
 // .sstable sstable_path passed as something like /dir/sst_21
@@ -63,10 +64,12 @@ static struct sparse_idx_array *idx_init(size_t size) {
 
 static int idx_put(struct sparse_idx_entry_type element,
                    struct sparse_idx_array *idx) {
+
   if (idx->count >= idx->capacity) {
     if ((idx->entries = realloc(idx->entries,
                                 idx->capacity * 2 * sizeof(*idx->entries))) ==
         NULL) {
+      DEBUG_LOG("Error in realloc in idx_put\n");
       return -1;
     }
     idx->capacity *= 2;
@@ -93,6 +96,10 @@ int sstable_kv_writer(struct sstable_writer_type *w,
   size_t record_size =
       sizeof(key->length) + sizeof(value->length) + key->length + value->length;
 
+  if (record_size > BLOCK_SIZE) {
+    DEBUG_LOG("OVERSIZE record ");
+  }
+
   if (w->used > 0 && w->used + record_size >= BLOCK_SIZE) {
     off_t block_offset = lseek(w->fd, 0, SEEK_CUR);
 
@@ -112,7 +119,11 @@ int sstable_kv_writer(struct sstable_writer_type *w,
     memset(&w->first_key, 0, sizeof(w->first_key));
     memset(w->block, 0, sizeof(w->block));
 
-  } else if (w->used == 0 && record_size > BLOCK_SIZE) {
+    memcpy(&w->first_key, key, sizeof(*key));
+  }
+  if (w->used == 0 && record_size > BLOCK_SIZE) {
+
+    memcpy(&w->first_key, key, sizeof(*key));
 
     uint8_t big_block[record_size];
     memcpy(big_block + w->used, &key->length, sizeof(key->length));
@@ -164,6 +175,7 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
 
   int sstable_fd = open(sstable_temp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (sstable_fd < 0) {
+    DEBUG_LOG("Error in sstable_fd open in sstable_flush\n");
     return -1;
   }
 
@@ -231,11 +243,17 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
     if (n == -1) {
       close(sstable_fd);
       unlink(sstable_temp_path);
+      DEBUG_LOG("Error in writing entry_key.length of sparse index in "
+                "sstable_flsuh\n");
       return -1;
     }
     n = attempt_full_write(sstable_fd, entry_key.data, entry_key.length);
     if (n == -1) {
       close(sstable_fd);
+      DEBUG_LOG(
+          "Error in writing entry_key.data of sparse index in sstable_flsuh\n");
+      DEBUG_LOG("entry_key.data = %p , entry_key.length = %u , errno = %d\n",
+                (void *)entry_key.data, entry_key.length, errno);
       unlink(sstable_temp_path);
       return -1;
     }
@@ -243,6 +261,8 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
     if (n == -1) {
       close(sstable_fd);
       unlink(sstable_temp_path);
+      DEBUG_LOG(
+          "Error in writing entry.offset of sparse index in sstable_flsuh\n");
       return -1;
     }
   }
@@ -272,6 +292,7 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
     snprintf(sstable_final_path, sizeof(sstable_final_path), "%s.sstable",
              sstable_path);
     if (rename(sstable_temp_path, sstable_final_path) == -1) {
+      DEBUG_LOG("Error in renaming sstable_temp_path in sstable_flush\n");
       unlink(sstable_temp_path);
       return -1;
     }
@@ -285,9 +306,11 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
     dir[length] = '\0';
     int dirfd = open(dir, O_RDONLY);
     if (dirfd < 0) {
+      DEBUG_LOG("Error in dirfd open in sstable_flush\n");
       return -1;
     }
     if (fsync(dirfd) != 0) {
+      DEBUG_LOG("Error in dirfd fsync in sstable_flush\n");
       close(dirfd);
       return -1;
     }
