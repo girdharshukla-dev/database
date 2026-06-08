@@ -18,14 +18,16 @@
 // ... unless they dont need to be modified intermediately
 // format of a sstable is
 /*
- *  [header] -> contains sparse index offset
+ *  [header] -> contains sparse index offset and number of sparse index entries
  *  [Block 1] -> multiple records of format
- * [key_length][value_length][key_data][value_data] [Block 2] [Block 3]
+ *               [key_length][value_length][key_data][value_data]
+ *  [Block 2]
+ *  [Block 3]
  *  ...
  *  ...
  *  ...       -> each block has a target size of BLOCK_SIZE but it is not a
- * strict threshold
- *  ...       -> if the last record overflow ... let it overflow
+ *               strict threshold
+ *  ...       -> if the last record overflows ... let it overflow
  *  [sparse index] -> contains the first key of each block and its offset
  *                 -> records as [key_length][key_data][offset]
  */
@@ -81,8 +83,9 @@ struct sstable_writer_type {
   struct slice_type first_key;
 };
 
-int sstable_kv_writer(struct sstable_writer_type *w, struct slice_type *key,
-                      struct slice_type *value) {
+int sstable_kv_writer(struct sstable_writer_type *w,
+                      const struct slice_type *key,
+                      const struct slice_type *value) {
   if (w->used == 0) {
     memcpy(&w->first_key, key, sizeof(*key));
   }
@@ -315,6 +318,7 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
   struct slice_type temp_key;
 
   lseek(sstable_fd, sparse_idx_offset, SEEK_SET);
+
   for (size_t i = 0; i < header.idx_entries_count; i++) {
     int n = attempt_full_read(sstable_fd, &temp_key.length,
                               sizeof(temp_key.length));
@@ -323,6 +327,8 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
       close(sstable_fd);
       return -1;
     }
+
+    temp_key.data = malloc(temp_key.length);
 
     n = attempt_full_read(sstable_fd, temp_key.data, temp_key.length);
     if (n == -1 || n != temp_key.length) {
@@ -336,7 +342,10 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
       start_offset = temp_offset;
     } else {
       end_offset = temp_offset;
+      free(temp_key.data);
+      break;
     }
+    free(temp_key.data);
   }
 
   lseek(sstable_fd, start_offset, SEEK_SET);
@@ -393,6 +402,8 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
 
     free(buffer);
   }
+
+  close(sstable_fd);
 
   return -1;
 }
@@ -544,7 +555,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
     }
   }
 
-  struct sstable_writer_type *sst_writer = malloc(sizoef(*sst_writer));
+  struct sstable_writer_type *sst_writer = malloc(sizeof(*sst_writer));
   sst_writer->used = 0;
   sst_writer->fd = temp_fd;
   sst_writer->idx_array = idx_init(64);
@@ -681,6 +692,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
 
   free(sst_writer->idx_array->entries);
   free(sst_writer->idx_array);
+  free(sst_writer);
 
   if (fdatasync(temp_fd) == -1) {
     close(temp_fd);

@@ -50,8 +50,8 @@ This is done to enable crash recovery if process dies during the flush. The acti
 
 ### Read path
 1. The reads first hit the active memtable, if found then the result is returned else they go to the sstable lookup.
-2. The sstable lookup is naive for now, just scan the sstable from the newest to the oldest in linear order and see if the 
-key exists.
+2. If sstable looked up, the sstable contains a sparse index at the end of the file to avoid 
+naive linear scan of the whole sstable. (Details here [SSTable](#sstable))
 
 ### Recovery
 Recovery is based on 1 hard rule -> a single .log file(wal) corresponds to exactly 1 memtable.
@@ -89,9 +89,25 @@ a memtable first and then flushing it.
 - The max number of sstables that can exist at an instant is defined by the `MAX_SSTABLE_COUNT` in `config.h`.
 - When the count of sstables exceed the the `MAX_SSTABLE_COUNT`, `MAX_SSTABLES_COMPACTED`(also defined in `config.h`) 
 number of oldest sstables are merged into one.
-- For the sstable loopkup during reads, it is too naive right now, the engine just scans all the sstables from 
-newest to oldest linearly.
-- This naive lookup at this stage cause very amplified reads.
+- The sstable file is structred as below:
+```
+
+  [header]          -> contains sparse index offset and number of sparse index entries
+  [Block 1]         -> multiple records of format [key_length][value_length][key_data][value_data]
+  [Block 2]
+  [Block 3]
+  ...
+  ...
+  ...               -> each block has a target size of BLOCK_SIZE but it is not a strict threshold
+  ...               -> if the last record overflows ... let it overflow
+  [sparse index]    -> contains the first key of each block and its offset
+                    -> records as [key_length][key_data][offset]
+
+
+```
+- For the sstable loopkup during reads, first the sparse index is read and offset is set to the 
+correct block which might contain the key
+- This avoids naive linear scanning of whole sstable thus reducing read amplification.
 
 ### Manifest (manifest.txt)
 
@@ -174,6 +190,6 @@ This expects the libkv.so, db.h and slice.h somewhere in the same directory as e
 
 
 ## Work in progress :
-- Optimising the sstable lookup by adding bloom filters and sparse index.
+- Optimising the sstable lookup by adding bloom filters.
 
 
