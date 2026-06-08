@@ -34,7 +34,7 @@
 
 struct sstable_header_type {
   uint64_t sparse_index_offset;
-  size_t idx_count;
+  size_t idx_entries_count;
 };
 
 struct sparse_idx_entry_type {
@@ -245,7 +245,7 @@ int sstable_flush(struct memtable_type *mt, const char *sstable_path) {
   }
 
   header.sparse_index_offset = idx_offset;
-  header.idx_count = w->idx_array->count;
+  header.idx_entries_count = w->idx_array->count;
   lseek(sstable_fd, 0, SEEK_SET);
   if (attempt_full_write(sstable_fd, &header, sizeof(header)) !=
       sizeof(header)) {
@@ -301,11 +301,51 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
     return -1;
   }
 
+  struct sstable_header_type header;
+  int n = attempt_full_read(sstable_fd, &header, sizeof(header));
+  if (n == -1 || n != sizeof(header)) {
+    close(sstable_fd);
+    DEBUG_LOG("Error in reading header in sstable_get\n");
+    return -1;
+  }
+
+  off_t sparse_idx_offset = header.sparse_index_offset;
+  off_t start_offset = lseek(sstable_fd, 0, SEEK_CUR),
+        end_offset = sparse_idx_offset, temp_offset;
+  struct slice_type temp_key;
+
+  lseek(sstable_fd, sparse_idx_offset, SEEK_SET);
+  for (size_t i = 0; i < header.idx_entries_count; i++) {
+    int n = attempt_full_read(sstable_fd, &temp_key.length,
+                              sizeof(temp_key.length));
+    if (n == -1 || n != sizeof(temp_key.length)) {
+      DEBUG_LOG("Error in reading sparse index in sstable_get\n");
+      close(sstable_fd);
+      return -1;
+    }
+
+    n = attempt_full_read(sstable_fd, temp_key.data, temp_key.length);
+    if (n == -1 || n != temp_key.length) {
+      DEBUG_LOG("Error in reading sparse index in sstable_get\n");
+      close(sstable_fd);
+      return -1;
+    }
+
+    n = attempt_full_read(sstable_fd, &temp_offset, sizeof(temp_offset));
+    if (slice_cmp(target_key, &temp_key) >= 0) {
+      start_offset = temp_offset;
+    } else {
+      end_offset = temp_offset;
+    }
+  }
+
+  lseek(sstable_fd, start_offset, SEEK_SET);
+
   uint32_t key_length;
   uint32_t value_length;
-
   uint32_t lengths[2];
-  while (1) {
+
+  while (lseek(sstable_fd, 0, SEEK_CUR) < end_offset) {
     if (attempt_full_read(sstable_fd, lengths, 2 * sizeof(uint32_t)) !=
         2 * sizeof(uint32_t)) {
       close(sstable_fd);
@@ -353,6 +393,8 @@ int sstable_get(const char *sstable_path, const struct slice_type *target_key,
 
     free(buffer);
   }
+
+  return -1;
 }
 
 struct sstable_iter {
@@ -628,7 +670,7 @@ int sstable_compact(const char *sstable_paths[], size_t count,
   }
 
   header.sparse_index_offset = idx_offset;
-  header.idx_count = sst_writer->idx_array->count;
+  header.idx_entries_count = sst_writer->idx_array->count;
   lseek(temp_fd, 0, SEEK_SET);
   if (attempt_full_write(temp_fd, &header, sizeof(header)) != sizeof(header)) {
     close(temp_fd);
