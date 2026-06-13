@@ -189,6 +189,15 @@ gcc example.c -I. -L. -lkv -Wl,-rpath=. -O2 -o example
 This expects the libkv.so, db.h and slice.h somewhere in the same directory as example.c .
 
 
+## Benchmarks
+To run benchmarks, run the following commands:
+```bash
+cd tests
+make benchmark
+cd ../build
+./benchmark
+```
+
 ## Work in progress :
 - Optimising the sstable lookup by adding bloom filters.
 

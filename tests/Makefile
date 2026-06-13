@@ -54,6 +54,17 @@ db_debug_build:
     ../db/sstable.c \
     -I../db -O3 -o "../build/libkv.so" -lz
 
+benchmark:
+	gcc -flto \
+	benchmark.c \
+    ../db/db.c \
+    ../db/wal.c \
+    ../db/memtable.c \
+    ../db/io_functions.c \
+    ../db/skiplist.c \
+    ../db/sstable.c \
+    -I../db -O3 -o "../build/benchmark" -lz
+
 
 clean:
 	rm -rf ../build/*
