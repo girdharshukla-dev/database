@@ -18,7 +18,8 @@ as a skiplist, immutable SSTables and compaction.
 - [Manifest](#manifesttxt)
 
 [Build instructions and examples](#build-instructions)<br>
-[Work in progress](#work-in-progress-)
+[Work in progress](#work-in-progress-)<br>
+[Benchmarks](#benchmarks)
 
 ---
 
