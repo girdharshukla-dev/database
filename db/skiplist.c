@@ -94,7 +94,7 @@ struct skiplist_type *skiplist_create(struct arena_type *arena) {
   return sl;
 }
 
-static void find_less_than_or_equal_to(struct skiplist_type *sl,
+static void find_less_than(struct skiplist_type *sl,
                                        const struct slice_type *key,
                                        struct sl_node *pred[]) {
   struct sl_node *cur = sl->head;
@@ -108,7 +108,7 @@ static void find_less_than_or_equal_to(struct skiplist_type *sl,
 int skiplist_insert(struct skiplist_type *sl, const struct slice_type *key,
                     const struct slice_type *value) {
   struct sl_node *preds[SKIPLIST_MAX_LEVEL_COUNT];
-  find_less_than_or_equal_to(sl, key, preds);
+  find_less_than(sl, key, preds);
 
   if (preds[0]->next[0] != NULL &&
       slice_cmp(&preds[0]->next[0]->key, key) == 0) {
