@@ -13,25 +13,41 @@
 #include <debug.h>
 #include <errno.h>
 
+// clang-format off
 // first flush to to a .tmp file, when whole flushing succeeds, rename it to
 // .sstable sstable_path passed as something like /dir/sst_21
 // sstable_path are mostly passed around as /dir/sst_21 without the .sstable
 // ... unless they dont need to be modified intermediately
 // format of a sstable is
 /*
- *  [header] -> contains sparse index offset and number of sparse index entries
- *  [Block 1] -> multiple records of format
- *               [key_length][value_length][key_data][value_data]
- *  [Block 2]
- *  [Block 3]
- *  ...
- *  ...
- *  ...       -> each block has a target size of BLOCK_SIZE but it is not a
- *               strict threshold
- *  ...       -> if the last record overflows ... let it overflow
- *  [sparse index] -> contains the first key of each block and its offset
- *                 -> records as [key_length][key_data][offset]
- */
+*  [ header ] -> contains sparse index offset and number of sparse index entries
+*  [ Block 1 ] -> multiple records of format
+*               [key_length][value_length][key_data][value_data]
+*  [ Block 2 ]
+*  [ Block 3 ]
+*  ...
+*  ...
+*  ...       -> each block has a target size of BLOCK_SIZE but it is not a
+*               strict threshold for a record that itself is greater than the BLOCK_SIZE
+*  ...       -> if the last record overflows the current block ... a new block is started and this   
+*               last record is moved to that new block
+*            -> if a record arrives that itself is bigger than the BLOCK_SIZE, a big_block of size
+*               relevant to the record is created and this record occupies this whole big_block
+*  [ sparse index ] -> contains the first key of each block and its offset
+*                 -> records as [key_length][key_data][offset]
+*  [ EOF ]
+*/
+
+/* 
+* Example:
+ [ header ]
+ [ Block with size less than or equal to BLOCK_SIZE ]
+ [ Block with size less than or equal to BLOCK_SIZE ]
+ [ SOME LARGE BIG_BLOCK ]
+ [ Block with size less than or equal to BLOCK_SIZE ]
+ [ sparse index ]
+*/
+// clang-format off
 
 #define BLOCK_SIZE 4096
 

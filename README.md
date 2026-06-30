@@ -93,17 +93,22 @@ number of oldest sstables are merged into one.
 - The sstable file is structred as below:
 ```
 
-  [header]          -> contains sparse index offset and number of sparse index entries
-  [Block 1]         -> multiple records of format [key_length][value_length][key_data][value_data]
-  [Block 2]
-  [Block 3]
-  ...
-  ...
-  ...               -> each block has a target size of BLOCK_SIZE but it is not a strict threshold
-  ...               -> if the last record overflows ... let it overflow
-  [sparse index]    -> contains the first key of each block and its offset
-                    -> records as [key_length][key_data][offset]
-
+[ header ] -> contains sparse index offset and number of sparse index entries
+[ Block 1 ] -> multiple records of format
+             [key_length][value_length][key_data][value_data]
+[ Block 2 ]
+[ Block 3 ]
+...
+...
+...       -> each block has a target size of BLOCK_SIZE but it is not a
+             strict threshold for a record that itself is greater than the BLOCK_SIZE
+...       -> if the last record overflows the current block ... a new block is started and this   
+             last record is moved to that new block
+          -> if a record arrives that itself is bigger than the BLOCK_SIZE, a big_block of size
+             relevant to the record is created and this record occupies this whole big_block
+[ sparse index ] -> contains the first key of each block and its offset
+               -> records as [key_length][key_data][offset]
+[ EOF ]
 
 ```
 - For the sstable loopkup during reads, first the sparse index is read and offset is set to the 
